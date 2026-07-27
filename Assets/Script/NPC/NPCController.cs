@@ -1,17 +1,23 @@
+using System;
 using UnityEngine;
+using ZoneUA.AI;
+using ZoneUA.Factions;
 
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(Health))]
 [RequireComponent(typeof(Animator))]
+[DisallowMultipleComponent]
 public sealed class NPCController : MonoBehaviour
 {
     private static readonly int SpeedHash = Animator.StringToHash("Speed");
     private const int DetectionBufferSize = 32;
 
+    [Header("Definition")]
+    [SerializeField] private NpcDefinition definition;
+
     [Header("Identity")]
     [SerializeField] private string npcName;
     [SerializeField] private bool isHaveRootLocation;
-    [SerializeField] private string currentLogicState = "Patrol";
 
     [Header("Equipment")]
     [SerializeField] private GameObject weapon;
@@ -19,215 +25,331 @@ public sealed class NPCController : MonoBehaviour
 
     [Header("Logic")]
     [SerializeField] private bool isLogicTurnOn = true;
-    [SerializeField, Min(0.02f)] private float mediumTermLogicInterval = 1f;
-    [SerializeField, Min(0.02f)] private float longTermLogicInterval = 5f;
+    [SerializeField, Min(0.02f)] private float decisionInterval = 0.25f;
     [SerializeField] private LayerMask detectionLayers = ~0;
+    [SerializeField] private LayerMask lineOfSightBlockingLayers;
+    [SerializeField] private bool requireLineOfSight;
 
-    [Header("Patrol")]
+    [Header("Patrol Fallback")]
     [SerializeField] private Transform[] patrolPoints;
     [SerializeField, Min(0f)] private float moveSpeed = 4f;
+    [SerializeField, Min(0f)] private float stoppingDistance = 0.25f;
     [SerializeField, Min(0f)] private float minDelay = 3f;
     [SerializeField, Min(0f)] private float maxDelay = 7f;
 
-    [Header("Combat")]
+    [Header("Combat Fallback")]
     [SerializeField, Min(0f)] private float detectionRadius = 12f;
     [SerializeField, Min(0f)] private float shootRadius = 10f;
+    [SerializeField, Min(0f)] private float loseTargetDelay = 3f;
+    [SerializeField, Range(0f, 1f)] private float fleeHealthFraction = 0.15f;
 
     [Header("Runtime Debug")]
+    [SerializeField] private NpcState currentState;
     [SerializeField] private Transform patrolPointTarget;
     [SerializeField] private Transform targetNPC;
     [SerializeField] private Transform targetObject;
     [SerializeField] private float currentSpeed;
 
     private readonly Collider2D[] detectionBuffer = new Collider2D[DetectionBufferSize];
+    private readonly NpcBrainState brain = new NpcBrainState();
 
     private Rigidbody2D body;
     private Animator animator;
     private Health health;
+    private FactionMember factionMember;
     private WeaponController weaponController;
     private GameObject mainWeapon;
-
     private int currentPointIndex = -1;
-    private float mediumTermLogicTimer;
-    private float longTermLogicTimer;
+    private float nextDecisionTime;
     private float nextPatrolDecisionTime;
     private bool patrolDecisionScheduled;
-    private bool isTargetReached = true;
 
-    private enum LogicState
-    {
-        Patrol
-    }
+    public event Action<NpcState, NpcState> StateChanged;
+    public event Action<Transform> TargetChanged;
 
-    private LogicState logicState = LogicState.Patrol;
+    public NpcState CurrentState => brain.Current;
+    public Transform CurrentTarget => targetNPC;
+    public bool HasTarget => targetNPC != null;
+
+    private float MovementSpeed => definition != null ? definition.MovementSpeed : moveSpeed;
+    private float StopDistance => definition != null ? definition.StoppingDistance : stoppingDistance;
+    private float DetectionRadius => definition != null ? definition.DetectionRadius : detectionRadius;
+    private float AttackDistance => definition != null ? definition.PreferredAttackDistance : shootRadius;
+    private float LoseTargetDelay => definition != null ? definition.LoseTargetDelay : loseTargetDelay;
+    private float FleeThreshold => definition != null ? definition.FleeHealthFraction : fleeHealthFraction;
+    private float DecisionInterval => definition != null ? definition.DecisionInterval : decisionInterval;
+    private float MinimumPatrolWait => definition != null ? definition.MinimumPatrolWait : minDelay;
+    private float MaximumPatrolWait => definition != null ? definition.MaximumPatrolWait : maxDelay;
 
     private void Awake()
     {
         body = GetComponent<Rigidbody2D>();
         animator = GetComponent<Animator>();
         health = GetComponent<Health>();
+        factionMember = GetComponent<FactionMember>();
+        brain.Changed += HandleStateChanged;
     }
 
     private void Start()
     {
         SpawnWeapon();
         SetWeaponShow(true);
-
-        weaponController = GetComponentInChildren<WeaponController>();
+        weaponController = GetComponentInChildren<WeaponController>(true);
         if (weaponController != null)
         {
             weaponController.CurrentFireMode = weaponController.SupportsBurst
                 ? WeaponController.FireMode.Burst
                 : WeaponController.FireMode.Single;
-            weaponController.RotationSpeed = weaponRotateSpeed;
+            weaponController.RotationSpeed = definition != null
+                ? definition.AimRotationSpeed
+                : weaponRotateSpeed;
         }
 
-        currentLogicState = logicState.ToString();
-        ScheduleNextPatrolDecision();
+        ChooseNextPatrolPoint();
+        nextDecisionTime = Time.time;
+        EvaluateState(Time.time);
+    }
+
+    private void OnDestroy()
+    {
+        brain.Changed -= HandleStateChanged;
     }
 
     private void FixedUpdate()
     {
         if (!isLogicTurnOn || !health.IsAlive)
         {
+            EnterDeadState();
             return;
         }
 
-        float deltaTime = Time.fixedDeltaTime;
-        mediumTermLogicTimer += deltaTime;
-        longTermLogicTimer += deltaTime;
-
-        ShortTermLogic();
-        UpdatePatrolDecision();
-
-        if (mediumTermLogicTimer >= mediumTermLogicInterval)
+        float now = Time.time;
+        if (now >= nextDecisionTime)
         {
-            mediumTermLogicTimer = 0f;
-            MediumTermLogic();
+            nextDecisionTime = now + DecisionInterval;
+            AcquireTarget();
+            EvaluateState(now);
         }
 
-        if (longTermLogicTimer >= longTermLogicInterval)
+        TickCurrentState(now);
+        animator.SetFloat(SpeedHash, currentSpeed);
+    }
+
+    private void EvaluateState(float now)
+    {
+        float healthFraction = health.MaximumHealth > 0
+            ? health.CurrentHealth / (float)health.MaximumHealth
+            : 0f;
+        float targetDistance = targetNPC != null
+            ? Vector2.Distance(body.position, targetNPC.position)
+            : float.PositiveInfinity;
+
+        brain.SetTargetVisible(targetNPC != null, now);
+        currentState = brain.Evaluate(
+            health.IsAlive,
+            healthFraction,
+            FleeThreshold,
+            patrolPoints != null && patrolPoints.Length > 0,
+            targetDistance,
+            AttackDistance,
+            LoseTargetDelay,
+            now);
+    }
+
+    private void TickCurrentState(float now)
+    {
+        switch (brain.Current)
         {
-            longTermLogicTimer = 0f;
-            LongTermLogic();
+            case NpcState.Idle:
+                StopMovement();
+                TrySchedulePatrol(now);
+                break;
+            case NpcState.Patrol:
+                TickPatrol(now);
+                break;
+            case NpcState.Chase:
+                TickChase();
+                break;
+            case NpcState.Attack:
+                TickAttack();
+                break;
+            case NpcState.Flee:
+                TickFlee();
+                break;
+            case NpcState.Dead:
+                StopMovement();
+                break;
         }
     }
 
-    private void ShortTermLogic()
+    private void TickPatrol(float now)
     {
-        if (logicState == LogicState.Patrol)
+        if (patrolPointTarget == null)
         {
-            PatrolLogic();
+            StopMovement();
+            TrySchedulePatrol(now);
+            return;
         }
 
-        if (targetNPC != null)
+        if (MoveTowards(patrolPointTarget.position, StopDistance))
         {
-            RotateToTarget(targetNPC);
-
-            float squaredDistance = ((Vector2)targetNPC.position - body.position).sqrMagnitude;
-            if (squaredDistance <= shootRadius * shootRadius && weaponController != null)
-            {
-                if (weaponController.CurrentAmmo > 0)
-                {
-                    weaponController.FireWithModes();
-                }
-                else
-                {
-                    weaponController.Reload();
-                }
-            }
+            patrolPointTarget = null;
+            patrolDecisionScheduled = false;
+            TrySchedulePatrol(now);
         }
-        else if (weaponController != null &&
-                 weaponController.CurrentAmmo < weaponController.WeaponData.MaximumAmmo)
+        else
+        {
+            targetObject = patrolPointTarget;
+            weaponController?.SetObjectTarget(targetObject);
+        }
+    }
+
+    private void TickChase()
+    {
+        if (targetNPC == null)
+        {
+            StopMovement();
+            return;
+        }
+
+        RotateToTarget(targetNPC);
+        MoveTowards(targetNPC.position, AttackDistance * 0.9f);
+    }
+
+    private void TickAttack()
+    {
+        StopMovement();
+        if (targetNPC == null || weaponController == null)
+        {
+            return;
+        }
+
+        RotateToTarget(targetNPC);
+        weaponController.SetNPCTarget(targetNPC);
+        if (weaponController.CurrentAmmo > 0)
+        {
+            weaponController.FireWithModes();
+        }
+        else
         {
             weaponController.Reload();
         }
     }
 
-    private void MediumTermLogic()
+    private void TickFlee()
     {
-        CheckNPCInRadius();
-    }
-
-    private void LongTermLogic()
-    {
-        if (isTargetReached && !patrolDecisionScheduled)
+        if (targetNPC == null)
         {
-            ScheduleNextPatrolDecision();
+            StopMovement();
+            return;
         }
+
+        Vector2 away = body.position - (Vector2)targetNPC.position;
+        if (away.sqrMagnitude <= 0.0001f)
+        {
+            away = Vector2.right;
+        }
+
+        Vector2 destination = body.position + away.normalized * Mathf.Max(AttackDistance, 1f);
+        MoveTowards(destination, 0f);
     }
 
-    private void ScheduleNextPatrolDecision()
+    private bool MoveTowards(Vector2 destination, float stopDistance)
+    {
+        Vector2 offset = destination - body.position;
+        if (offset.sqrMagnitude <= stopDistance * stopDistance)
+        {
+            StopMovement();
+            return true;
+        }
+
+        currentSpeed = MovementSpeed;
+        Vector2 nextPosition = Vector2.MoveTowards(
+            body.position,
+            destination,
+            MovementSpeed * Time.fixedDeltaTime);
+        body.MovePosition(nextPosition);
+        RotateToPosition(destination);
+        return false;
+    }
+
+    private void StopMovement()
+    {
+        currentSpeed = 0f;
+        body.linearVelocity = Vector2.zero;
+    }
+
+    private void AcquireTarget()
+    {
+        int hitCount = Physics2D.OverlapCircleNonAlloc(
+            transform.position,
+            DetectionRadius,
+            detectionBuffer,
+            detectionLayers);
+
+        Transform bestTarget = null;
+        float bestScore = float.NegativeInfinity;
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider2D candidateCollider = detectionBuffer[i];
+            detectionBuffer[i] = null;
+            if (candidateCollider == null || candidateCollider.transform.root == transform.root)
+            {
+                continue;
+            }
+
+            Health candidateHealth = candidateCollider.GetComponentInParent<Health>();
+            if (candidateHealth == null || !candidateHealth.IsAlive)
+            {
+                continue;
+            }
+
+            FactionMember candidateFaction = candidateHealth.GetComponent<FactionMember>();
+            bool hostile = factionMember == null || factionMember.CanDamage(candidateFaction);
+            bool visible = !requireLineOfSight || HasLineOfSight(candidateHealth.transform);
+            float squaredDistance = ((Vector2)candidateHealth.transform.position - body.position).sqrMagnitude;
+            float score = NpcTargetScoring.Score(squaredDistance, hostile, candidateHealth.IsAlive, visible);
+            if (!NpcTargetScoring.IsBetter(score, bestScore))
+            {
+                continue;
+            }
+
+            bestScore = score;
+            bestTarget = candidateHealth.transform;
+        }
+
+        SetTarget(bestTarget, TargetType.NPC);
+    }
+
+    private bool HasLineOfSight(Transform target)
+    {
+        if (target == null || lineOfSightBlockingLayers.value == 0)
+        {
+            return true;
+        }
+
+        RaycastHit2D hit = Physics2D.Linecast(body.position, target.position, lineOfSightBlockingLayers);
+        return hit.collider == null || hit.collider.transform.root == target.root;
+    }
+
+    private void TrySchedulePatrol(float now)
     {
         if (patrolPoints == null || patrolPoints.Length == 0)
         {
+            return;
+        }
+
+        if (!patrolDecisionScheduled)
+        {
+            nextPatrolDecisionTime = now + UnityEngine.Random.Range(MinimumPatrolWait, MaximumPatrolWait);
+            patrolDecisionScheduled = true;
+        }
+
+        if (now >= nextPatrolDecisionTime)
+        {
             patrolDecisionScheduled = false;
-            return;
-        }
-
-        nextPatrolDecisionTime = Time.time + Random.Range(minDelay, maxDelay);
-        patrolDecisionScheduled = true;
-    }
-
-    private void UpdatePatrolDecision()
-    {
-        if (!isTargetReached ||
-            !patrolDecisionScheduled ||
-            Time.time < nextPatrolDecisionTime)
-        {
-            return;
-        }
-
-        patrolDecisionScheduled = false;
-        ChooseNextPatrolPoint();
-    }
-
-    private void PatrolLogic()
-    {
-        if (patrolPointTarget == null || isTargetReached)
-        {
-            currentSpeed = 0f;
-            animator.SetFloat(SpeedHash, currentSpeed);
-            return;
-        }
-
-        currentSpeed = moveSpeed;
-        Vector2 targetPosition = patrolPointTarget.position;
-        Vector2 nextPosition = Vector2.MoveTowards(
-            body.position,
-            targetPosition,
-            moveSpeed * Time.fixedDeltaTime);
-
-        body.MovePosition(nextPosition);
-
-        if (targetNPC == null)
-        {
-            RotateToTarget(targetObject);
-        }
-
-        if ((targetPosition - nextPosition).sqrMagnitude <= 0.0001f)
-        {
-            currentSpeed = 0f;
-            isTargetReached = true;
-            ScheduleNextPatrolDecision();
-        }
-
-        animator.SetFloat(SpeedHash, currentSpeed);
-    }
-
-    private void RotateToTarget(Transform target)
-    {
-        if (target == null)
-        {
-            return;
-        }
-
-        bool shouldFaceLeft = target.position.x <= transform.position.x;
-        float targetYRotation = shouldFaceLeft ? 180f : 0f;
-
-        if (!Mathf.Approximately(transform.eulerAngles.y, targetYRotation))
-        {
-            transform.rotation = Quaternion.Euler(0f, targetYRotation, 0f);
+            ChooseNextPatrolPoint();
         }
     }
 
@@ -235,65 +357,46 @@ public sealed class NPCController : MonoBehaviour
     {
         if (patrolPoints == null || patrolPoints.Length == 0)
         {
+            patrolPointTarget = null;
             return;
         }
 
-        currentPointIndex = (currentPointIndex + 1) % patrolPoints.Length;
-        patrolPointTarget = patrolPoints[currentPointIndex];
-        isTargetReached = patrolPointTarget == null;
-        if (isTargetReached)
+        for (int attempt = 0; attempt < patrolPoints.Length; attempt++)
         {
-            ScheduleNextPatrolDecision();
+            currentPointIndex = (currentPointIndex + 1) % patrolPoints.Length;
+            if (patrolPoints[currentPointIndex] != null)
+            {
+                patrolPointTarget = patrolPoints[currentPointIndex];
+                SetTarget(patrolPointTarget, TargetType.OBJECT);
+                return;
+            }
         }
 
-        SetTarget(patrolPointTarget, TargetType.OBJECT);
+        patrolPointTarget = null;
     }
 
-    private void CheckNPCInRadius()
+    private void HandleStateChanged(NpcState previous, NpcState next)
     {
-        int hitCount = Physics2D.OverlapCircleNonAlloc(
-            transform.position,
-            detectionRadius,
-            detectionBuffer,
-            detectionLayers);
-
-        Transform closestTarget = null;
-        float closestSquaredDistance = float.PositiveInfinity;
-
-        for (int i = 0; i < hitCount; i++)
+        currentState = next;
+        if (next != NpcState.Attack)
         {
-            Collider2D targetCollider = detectionBuffer[i];
-            detectionBuffer[i] = null;
-
-            if (targetCollider == null || targetCollider.transform.root == transform.root)
-            {
-                continue;
-            }
-
-            if (!targetCollider.CompareTag("Player") && !targetCollider.CompareTag("Enemy"))
-            {
-                continue;
-            }
-
-            Health targetHealth = targetCollider.GetComponentInParent<Health>();
-            if (targetHealth == null || !targetHealth.IsAlive)
-            {
-                continue;
-            }
-
-            float squaredDistance =
-                ((Vector2)targetCollider.transform.position - body.position).sqrMagnitude;
-
-            if (squaredDistance >= closestSquaredDistance)
-            {
-                continue;
-            }
-
-            closestSquaredDistance = squaredDistance;
-            closestTarget = targetHealth.transform;
+            weaponController?.StopFire();
         }
+        StateChanged?.Invoke(previous, next);
+    }
 
-        SetTarget(closestTarget, TargetType.NPC);
+    private void RotateToTarget(Transform target)
+    {
+        if (target != null)
+        {
+            RotateToPosition(target.position);
+        }
+    }
+
+    private void RotateToPosition(Vector2 targetPosition)
+    {
+        bool shouldFaceLeft = targetPosition.x <= transform.position.x;
+        transform.rotation = Quaternion.Euler(0f, shouldFaceLeft ? 180f : 0f, 0f);
     }
 
     public enum TargetType
@@ -307,8 +410,16 @@ public sealed class NPCController : MonoBehaviour
     {
         if (targetType == TargetType.NPC || targetType == TargetType.BOTH)
         {
-            targetNPC = newTarget;
+            if (targetNPC != newTarget)
+            {
+                targetNPC = newTarget;
+                TargetChanged?.Invoke(newTarget);
+            }
             weaponController?.SetNPCTarget(newTarget);
+            if (newTarget == null)
+            {
+                brain.ClearTarget();
+            }
         }
 
         if (targetType == TargetType.OBJECT || targetType == TargetType.BOTH)
@@ -336,13 +447,8 @@ public sealed class NPCController : MonoBehaviour
         Vector2 offset = GlobalSystem.Instance != null
             ? GlobalSystem.Instance.WeaponSpawnOffset
             : Vector2.zero;
-
-        Vector3 spawnPosition = transform.position;
-        spawnPosition.x -= offset.x;
-        spawnPosition.y -= offset.y;
-
+        Vector3 spawnPosition = transform.position - (Vector3)offset;
         mainWeapon = Instantiate(weapon, spawnPosition, transform.rotation, transform);
-
         if (mainWeapon.TryGetComponent(out Animator weaponAnimator))
         {
             weaponAnimator.applyRootMotion = true;
@@ -351,30 +457,38 @@ public sealed class NPCController : MonoBehaviour
 
     public void StopAllWeaponCoroutines()
     {
-        weaponController?.StopAllCoroutines();
+        weaponController?.StopFire();
     }
 
     public void PrepareForDeath()
     {
         SetTarget(null, TargetType.BOTH);
         SetWeaponShow(false);
-        StopAllWeaponCoroutines();
+        weaponController?.StopFire();
         isLogicTurnOn = false;
-        currentSpeed = 0f;
+        EnterDeadState();
+    }
+
+    private void EnterDeadState()
+    {
+        brain.Transition(NpcState.Dead);
+        StopMovement();
         animator.SetFloat(SpeedHash, 0f);
     }
 
     private void OnDrawGizmosSelected()
     {
-        Gizmos.DrawWireSphere(transform.position, detectionRadius);
+        Gizmos.DrawWireSphere(transform.position, DetectionRadius);
     }
 
     private void OnValidate()
     {
-        mediumTermLogicInterval = Mathf.Max(0.02f, mediumTermLogicInterval);
-        longTermLogicInterval = Mathf.Max(0.02f, longTermLogicInterval);
+        decisionInterval = Mathf.Max(0.02f, decisionInterval);
         maxDelay = Mathf.Max(minDelay, maxDelay);
         detectionRadius = Mathf.Max(0f, detectionRadius);
         shootRadius = Mathf.Clamp(shootRadius, 0f, detectionRadius);
+        stoppingDistance = Mathf.Max(0f, stoppingDistance);
+        loseTargetDelay = Mathf.Max(0f, loseTargetDelay);
+        fleeHealthFraction = Mathf.Clamp01(fleeHealthFraction);
     }
 }
