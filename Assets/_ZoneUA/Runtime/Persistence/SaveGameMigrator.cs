@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ZoneUA.Persistence
 {
@@ -18,9 +19,18 @@ namespace ZoneUA.Persistence
                 data.schemaVersion = 2;
             }
 
+            if (data.schemaVersion == 2)
+            {
+                data.worldObjects = new List<PersistentObjectSaveData>();
+                data.destroyedObjectIds = new List<string>();
+                data.schemaVersion = 3;
+            }
+
             data.player ??= new PlayerSaveData();
             data.player.maximumHealth = Math.Max(1, data.player.maximumHealth);
             data.player.currentHealth = Math.Clamp(data.player.currentHealth, 0, data.player.maximumHealth);
+            data.worldObjects ??= new List<PersistentObjectSaveData>();
+            data.destroyedObjectIds ??= new List<string>();
             return data;
         }
     }
