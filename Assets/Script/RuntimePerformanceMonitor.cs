@@ -60,7 +60,7 @@ public sealed class RuntimePerformanceMonitor : MonoBehaviour
     [ContextMenu("Capture Performance Sample")]
     public void CaptureSample()
     {
-        GlobalSystem global = GlobalSystem.Instance;
+        RuntimeObjectPool pool = GlobalSystem.Instance != null ? GlobalSystem.Instance.ObjectPool : null;
         latest = new PerformanceSample
         {
             timestampSeconds = Time.realtimeSinceStartupAsDouble,
@@ -69,8 +69,8 @@ public sealed class RuntimePerformanceMonitor : MonoBehaviour
             renderThreadMilliseconds = ToMilliseconds(renderThreadRecorder.LastValue),
             gcAllocatedBytes = gcAllocatedRecorder.LastValue,
             totalReservedMemoryBytes = reservedMemoryRecorder.LastValue,
-            trackedPoolInstances = global != null ? global.TrackedInstanceCount : 0,
-            scheduledPoolReleases = global != null ? global.ScheduledReleaseCount : 0,
+            trackedPoolInstances = pool != null ? pool.TrackedInstanceCount : 0,
+            scheduledPoolReleases = pool != null ? pool.ScheduledReleaseCount : 0,
             activeNpcCount = FindObjectsByType<NPCController>(FindObjectsSortMode.None).Length,
             activeProjectileCount = FindObjectsByType<Bullet>(FindObjectsSortMode.None).Length,
             generatedObjectCount = FindObjectsByType<ChunkManager>(FindObjectsSortMode.None).Length > 0
