@@ -1,18 +1,29 @@
 using System.Collections;
 using UnityEngine;
+using ZoneUA.Infrastructure;
 
-public sealed class AutoDispose : MonoBehaviour
+public sealed class AutoDispose : MonoBehaviour, IPoolable
 {
     [SerializeField, Min(0f)] private float timeToLive = 5f;
 
     private Coroutine fallbackRoutine;
 
-    private void OnEnable()
+    private void Start()
     {
         ScheduleRelease();
     }
 
     private void OnDisable()
+    {
+        StopFallbackRoutine();
+    }
+
+    public void OnPoolSpawned()
+    {
+        ScheduleRelease();
+    }
+
+    public void OnPoolReleased()
     {
         StopFallbackRoutine();
     }
