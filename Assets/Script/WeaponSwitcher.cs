@@ -58,29 +58,14 @@ public sealed class WeaponSwitcher : MonoBehaviour
         SetActiveWeapon(null, null);
     }
 
-    private void Update()
-    {
-        if (!isSwitching)
-        {
-            if (Input.GetKeyDown(KeyCode.Alpha1))
-            {
-                RequestSwitch(0);
-            }
-            else if (Input.GetKeyDown(KeyCode.Alpha2))
-            {
-                RequestSwitch(1);
-            }
-        }
-
-        if (Input.GetKeyDown(KeyCode.Q))
-        {
-            HideAllWeapons();
-        }
-    }
-
     public void RequestSwitch(int index)
     {
-        if (index < 0 || index >= weapons.Length || weapons[index] == null)
+        if (isSwitching || index < 0 || index >= weapons.Length || weapons[index] == null)
+        {
+            return;
+        }
+
+        if (selectedWeapon == weapons[index])
         {
             return;
         }
@@ -102,6 +87,7 @@ public sealed class WeaponSwitcher : MonoBehaviour
         WeaponController newController)
     {
         isSwitching = true;
+        ActiveWeaponController?.StopFire();
         SetAllWeaponsActive(false);
 
         newWeapon.SetActive(true);
@@ -137,6 +123,7 @@ public sealed class WeaponSwitcher : MonoBehaviour
             switchRoutine = null;
         }
 
+        ActiveWeaponController?.StopFire();
         isSwitching = false;
         SetAllWeaponsActive(false);
         SetActiveWeapon(null, null);
@@ -163,6 +150,11 @@ public sealed class WeaponSwitcher : MonoBehaviour
                 weapons[i].SetActive(state);
             }
         }
+    }
+
+    private void OnDisable()
+    {
+        ActiveWeaponController?.StopFire();
     }
 
     private void OnValidate()
