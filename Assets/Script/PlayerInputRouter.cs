@@ -32,6 +32,8 @@ public sealed class PlayerInputRouter : MonoBehaviour
 
     private IWeaponCommands fixedWeaponCommands;
     private IWeaponInputOwnership fixedInputOwnership;
+    private WeaponController previousActiveWeapon;
+    private bool subscribed;
 
     public bool IsReady => actionMap != null;
 
@@ -47,6 +49,7 @@ public sealed class PlayerInputRouter : MonoBehaviour
         ResolveActions();
         Subscribe();
         actionMap?.Enable();
+        previousActiveWeapon = weaponSwitcher != null ? weaponSwitcher.ActiveWeaponController : null;
         SetExternalInputOwnership(true);
     }
 
@@ -56,6 +59,7 @@ public sealed class PlayerInputRouter : MonoBehaviour
         SetExternalInputOwnership(false);
         actionMap?.Disable();
         Unsubscribe();
+        previousActiveWeapon = null;
         characterController?.SetMovementInput(Vector2.zero);
         characterController?.SetSprintRequested(false);
     }
@@ -83,7 +87,6 @@ public sealed class PlayerInputRouter : MonoBehaviour
     {
         characterController ??= GetComponent<CharacterCustomController>();
         weaponSwitcher ??= GetComponent<WeaponSwitcher>();
-
         fixedWeaponCommands = weaponCommandSource as IWeaponCommands;
         fixedInputOwnership = weaponCommandSource as IWeaponInputOwnership;
     }
@@ -127,6 +130,11 @@ public sealed class PlayerInputRouter : MonoBehaviour
 
     private void Subscribe()
     {
+        if (subscribed)
+        {
+            return;
+        }
+
         if (fireAction != null)
         {
             fireAction.started += OnFireStarted;
@@ -139,10 +147,16 @@ public sealed class PlayerInputRouter : MonoBehaviour
         if (weapon2Action != null) weapon2Action.performed += OnWeapon2;
         if (hideWeaponAction != null) hideWeaponAction.performed += OnHideWeapon;
         if (weaponSwitcher != null) weaponSwitcher.ActiveWeaponChanged += OnActiveWeaponChanged;
+        subscribed = true;
     }
 
     private void Unsubscribe()
     {
+        if (!subscribed)
+        {
+            return;
+        }
+
         if (fireAction != null)
         {
             fireAction.started -= OnFireStarted;
@@ -155,6 +169,7 @@ public sealed class PlayerInputRouter : MonoBehaviour
         if (weapon2Action != null) weapon2Action.performed -= OnWeapon2;
         if (hideWeaponAction != null) hideWeaponAction.performed -= OnHideWeapon;
         if (weaponSwitcher != null) weaponSwitcher.ActiveWeaponChanged -= OnActiveWeaponChanged;
+        subscribed = false;
     }
 
     private IWeaponCommands CurrentWeaponCommands =>
@@ -167,15 +182,10 @@ public sealed class PlayerInputRouter : MonoBehaviour
             ? weaponSwitcher.ActiveWeaponController
             : fixedInputOwnership;
 
-    private void SetExternalInputOwnership(bool enabled)
-    {
+    private void SetExternalInputOwnership(bool enabled) =>
         CurrentInputOwnership?.SetExternalInputEnabled(enabled);
-    }
 
-    private void StopCurrentWeaponFire()
-    {
-        CurrentWeaponCommands?.StopFire();
-    }
+    private void StopCurrentWeaponFire() => CurrentWeaponCommands?.StopFire();
 
     private void OnFireStarted(InputAction.CallbackContext _) => CurrentWeaponCommands?.StartFire();
     private void OnFireCanceled(InputAction.CallbackContext _) => CurrentWeaponCommands?.StopFire();
@@ -185,11 +195,16 @@ public sealed class PlayerInputRouter : MonoBehaviour
     private void OnWeapon2(InputAction.CallbackContext _) => weaponSwitcher?.RequestSwitch(1);
     private void OnHideWeapon(InputAction.CallbackContext _) => weaponSwitcher?.HideAllWeapons();
 
-    private void OnActiveWeaponChanged(WeaponController previous, WeaponController current)
+    private void OnActiveWeaponChanged(WeaponController current)
     {
-        previous?.StopFire();
-        previous?.SetExternalInputEnabled(false);
+        if (previousActiveWeapon != current)
+        {
+            previousActiveWeapon?.StopFire();
+            previousActiveWeapon?.SetExternalInputEnabled(false);
+        }
+
         current?.SetExternalInputEnabled(isActiveAndEnabled);
+        previousActiveWeapon = current;
     }
 
     private void OnValidate()
