@@ -10,6 +10,8 @@ public sealed class PerformanceStressRunner : MonoBehaviour
     [SerializeField] private MapGenerator mapGenerator;
     [SerializeField] private GameObject npcPrefab;
     [SerializeField] private GameObject projectilePrefab;
+    [SerializeField, Tooltip("Optional lightweight prefab used to reach the requested generated-object load.")]
+    private GameObject generatedLoadPrefab;
     [SerializeField] private Transform spawnRoot;
     [SerializeField, Min(0.1f)] private float spawnRadius = 20f;
     [SerializeField] private bool runOnStart;
@@ -50,6 +52,7 @@ public sealed class PerformanceStressRunner : MonoBehaviour
         }
 
         SpawnNpcLoad(scenario.RequestedNpcCount);
+        SpawnGeneratedObjectLoad(scenario.RequestedGeneratedObjectCount);
 
         float warmupEnd = Time.realtimeSinceStartup + scenario.WarmupSeconds;
         while (Time.realtimeSinceStartup < warmupEnd)
@@ -62,10 +65,10 @@ public sealed class PerformanceStressRunner : MonoBehaviour
         while (Time.realtimeSinceStartup < captureEnd)
         {
             SpawnProjectileLoad(Time.unscaledDeltaTime);
-            monitor?.CaptureSample();
             yield return null;
         }
 
+        monitor?.CaptureSample();
         monitor?.WriteJson();
         CleanupSpawnedObjects();
         routine = null;
@@ -78,6 +81,16 @@ public sealed class PerformanceStressRunner : MonoBehaviour
         {
             Vector2 offset = Random.insideUnitCircle * spawnRadius;
             SpawnTracked(npcPrefab, transform.position + (Vector3)offset, Quaternion.identity);
+        }
+    }
+
+    private void SpawnGeneratedObjectLoad(int count)
+    {
+        if (generatedLoadPrefab == null) return;
+        for (int i = 0; i < count; i++)
+        {
+            Vector2 offset = Random.insideUnitCircle * spawnRadius;
+            SpawnTracked(generatedLoadPrefab, transform.position + (Vector3)offset, Quaternion.identity);
         }
     }
 
