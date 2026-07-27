@@ -23,9 +23,11 @@ namespace ZoneUA.Persistence
                     runtimeSpawned = identity.RuntimeSpawned
                 };
 
-                foreach (IPersistentSaveParticipant participant in identity.GetParticipants())
+                foreach (IPersistentSaveParticipant participant in identity.GetParticipants()
+                             .Where(item => item != null && !string.IsNullOrWhiteSpace(item.ParticipantKey))
+                             .GroupBy(item => item.ParticipantKey, StringComparer.Ordinal)
+                             .Select(group => group.First()))
                 {
-                    if (participant == null || string.IsNullOrWhiteSpace(participant.ParticipantKey)) continue;
                     objectData.components.Add(new PersistentComponentSaveData
                     {
                         participantKey = participant.ParticipantKey,
@@ -73,8 +75,9 @@ namespace ZoneUA.Persistence
                 }
 
                 var participants = identity.GetParticipants()
-                    .Where(item => item != null)
-                    .ToDictionary(item => item.ParticipantKey, StringComparer.Ordinal);
+                    .Where(item => item != null && !string.IsNullOrWhiteSpace(item.ParticipantKey))
+                    .GroupBy(item => item.ParticipantKey, StringComparer.Ordinal)
+                    .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
                 foreach (PersistentComponentSaveData component in objectData.components ?? new List<PersistentComponentSaveData>())
                 {
                     if (component == null || string.IsNullOrWhiteSpace(component.participantKey)) continue;
