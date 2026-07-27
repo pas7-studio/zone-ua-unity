@@ -80,8 +80,8 @@ public sealed class PlayerInputRouter : MonoBehaviour
             return;
         }
 
-        state.SetMove(moveAction?.ReadValue<Vector2>() ?? Vector2.zero);
-        state.SetSprint(sprintAction != null && sprintAction.IsPressed());
+        state.SetMove(ReadMovementInput());
+        state.SetSprint((sprintAction != null && sprintAction.IsPressed()) || IsKeyboardSprintPressed());
 
         if (lookAction != null)
         {
@@ -93,6 +93,23 @@ public sealed class PlayerInputRouter : MonoBehaviour
 
         ApplyContinuousState();
     }
+
+    private Vector2 ReadMovementInput()
+    {
+        Vector2 input = moveAction?.ReadValue<Vector2>() ?? Vector2.zero;
+        if (input.sqrMagnitude > 0.0001f || Keyboard.current == null)
+        {
+            return input;
+        }
+
+        // Keep keyboard movement functional even when an editor/device control
+        // scheme does not resolve the composite action correctly.
+        float x = (Keyboard.current.dKey.isPressed ? 1f : 0f) - (Keyboard.current.aKey.isPressed ? 1f : 0f);
+        float y = (Keyboard.current.wKey.isPressed ? 1f : 0f) - (Keyboard.current.sKey.isPressed ? 1f : 0f);
+        return Vector2.ClampMagnitude(new Vector2(x, y), 1f);
+    }
+
+    private bool IsKeyboardSprintPressed() => Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed;
 
     private void ApplyContinuousState()
     {
