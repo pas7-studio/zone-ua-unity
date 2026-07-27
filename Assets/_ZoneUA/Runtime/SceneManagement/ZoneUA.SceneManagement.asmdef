@@ -1,12 +1,8 @@
 {
-  "name": "ZoneUA.EditorValidation",
-  "rootNamespace": "ZoneUA.EditorValidation",
-  "references": [
-    "ZoneUA.SceneManagement"
-  ],
-  "includePlatforms": [
-    "Editor"
-  ],
+  "name": "ZoneUA.SceneManagement",
+  "rootNamespace": "ZoneUA.SceneManagement",
+  "references": [],
+  "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": false,
