@@ -6,7 +6,7 @@ public sealed class ChunkManager : MonoBehaviour
 {
     [SerializeField] private Camera mainCamera;
     [SerializeField, Tooltip("Optional parent containing generated chunk renderers.")]
-    private Transform chunkRoot;
+    private GameObject chunkParent;
     [SerializeField, Min(0.02f)] private float updateInterval = 0.5f;
     [SerializeField, Min(0f)] private float buffer = 0.5f;
 
@@ -21,7 +21,7 @@ public sealed class ChunkManager : MonoBehaviour
         public Renderer Renderer;
     }
 
-    public Transform ChunkRoot => chunkRoot != null ? chunkRoot : transform;
+    public Transform ChunkRoot => chunkParent != null ? chunkParent.transform : transform;
     public int TrackedChunkCount => chunks.Count;
 
     private void Awake()
@@ -52,7 +52,7 @@ public sealed class ChunkManager : MonoBehaviour
 
     public void SetChunkRoot(Transform root, bool refreshImmediately = true)
     {
-        chunkRoot = root;
+        chunkParent = root != null ? root.gameObject : null;
         if (refreshImmediately)
         {
             RefreshChunks();
