@@ -1,75 +1,70 @@
-# Zone UA Unity architecture
+# Zone UA architecture
 
-## Goals
+## Direction
 
-1. Preserve playable behaviour and serialized Unity references while modernising the codebase.
-2. Keep configuration in the Inspector and runtime state encapsulated.
-3. Remove repeated scene searches, component lookups and avoidable allocations.
-4. Separate gameplay domains so future features can be added without growing god objects.
+The project is being migrated incrementally from a prototype-style collection of MonoBehaviours to a small, explicit runtime architecture. Unity asset GUIDs and serialized Inspector data must remain stable during that process.
 
-## Runtime ownership
+## Runtime composition
 
-### `GlobalSystem`
+`GlobalSystem` is the current scene composition root. It owns scene-level references and creates the runtime infrastructure used by gameplay systems.
 
-`GlobalSystem` is the scene composition root for shared references and global visual settings. It registers a scene-local `Instance` during `Awake`; other systems no longer perform repeated tag searches.
+Current responsibilities:
 
-It should only contain references or configuration that is genuinely shared. Game rules should move into focused services or ScriptableObject configurations in later changes.
+- exposes the ammo UI reference;
+- owns the runtime object container;
+- provides centralised spawn/release operations;
+- owns `RuntimeObjectPool`;
+- exposes temporary blood-effect configuration until those values are migrated into ScriptableObject definitions.
 
-### Characters
+Gameplay components should not call `FindGameObjectWithTag("System")`. They should resolve `GlobalSystem.Instance` once and cache it.
 
-`CharacterCustomController` reads input in `Update`, applies Rigidbody movement in `FixedUpdate`, and caches the main camera and Animator parameter hashes.
+## Runtime object lifetime
 
-`Health` owns health state and invokes `Death` exactly once. Visual blood settings come from `GlobalSystem`.
+Frequently spawned transient objects must use `GlobalSystem.Spawn` and `GlobalSystem.Release` where practical.
 
-### Combat
+The pool currently supports:
 
-`Weapon` is weapon metadata. `WeaponController` owns firing, aiming, recoil and reload state. `WeaponSwitcher` only coordinates active weapon selection and ammo UI.
+- blood decals;
+- particle effects;
+- any prefab spawned through the composition root;
+- pool-aware `AutoDispose` objects.
 
-NPCs use the same public weapon API as the player rather than mutating implementation fields.
+The pool resets 2D/3D rigidbody velocities, trail renderers and particle systems before reuse. Objects not created by the pool safely fall back to normal `Destroy` behaviour.
 
-### NPC
+Future work should integrate projectile and shell spawning directly into this API after Play Mode verification.
 
-`NPCController` has three update frequencies:
+## Target asset layout
 
-- short-term movement/aiming in `FixedUpdate`;
-- medium-term target scanning at a configurable interval;
-- long-term patrol decisions at a configurable interval.
-
-Physics overlap queries use a reusable non-allocating buffer. Timers are reset after execution.
-
-### World
-
-`MapGenerator` generates deterministically without changing Unity's global random state. It tracks only objects it owns and clears that list when regenerating.
-
-`ChunkManager` caches chunk renderers and reuses a frustum plane array. `CharacterChunks` enables only the current chunk sorter instead of scanning the entire scene.
-
-## Target folder layout
-
-Asset moves should be done as a dedicated Unity Editor migration so `.meta` GUIDs are retained and scene/prefab references can be validated:
+Asset moves must be performed inside the Unity Editor so `.meta` files move with their assets.
 
 ```text
 Assets/
   _ZoneUA/
     Art/
+      Animations/
+      Materials/
+      Shaders/
+      Sprites/
     Audio/
-    Materials/
+      Music/
+      SFX/
     Prefabs/
       Characters/
+      Effects/
+      UI/
       Weapons/
       World/
-      UI/
     Runtime/
-      Core/
+      Camera/
       Characters/
       Combat/
-      AI/
-      Camera/
-      World/
+      Core/
       UI/
-      Utilities/
+      Weapons/
+      World/
     Scenes/
-      Production/
       Development/
+      Production/
     Settings/
     Tests/
       EditMode/
@@ -77,13 +72,51 @@ Assets/
   ThirdParty/
 ```
 
-The baseline refactor does not mass-move assets through Git because a Unity Editor reimport is required to verify every serialized reference.
+## Script rules
 
-## Next technical steps
+- One public MonoBehaviour or ScriptableObject per file.
+- Filename must match the public Unity type.
+- Inspector configuration uses private `[SerializeField]` fields.
+- Runtime state is exposed through read-only properties or explicit methods.
+- Cache components in `Awake` or `Start`; avoid repeated `GetComponent` in hot loops.
+- Use `Animator.StringToHash` for repeatedly accessed Animator parameters.
+- Use squared distances for repeated range comparisons.
+- Avoid LINQ, allocations and scene-wide searches in `Update`/`FixedUpdate`.
+- Use `OnValidate` for local numeric constraints and reference diagnostics.
+- Preserve renamed serialized fields with `FormerlySerializedAs`.
+- Keep backwards-compatible UnityEvent methods until scenes and prefabs are migrated.
 
-- Introduce ScriptableObject definitions for weapon, NPC and biome configuration.
-- Replace bullets, shell casings, blood decals and damage popups with object pools.
-- Split input from character movement, ideally using Unity Input System actions.
-- Add EditMode tests for deterministic map selection and PlayMode tests for health, reload and NPC scan cadence.
-- Replace tag-based hostility with factions/teams and layer masks.
-- Profile generated scenes with Unity Profiler before changing rendering or physics budgets.
+## Configuration migration
+
+Large groups of balancing values should move from scene objects into ScriptableObject definitions. Do this one subsystem at a time and retain the existing serialized values as migration fallbacks until every prefab has been updated.
+
+Recommended order:
+
+1. weapon definitions and fire/recoil profiles;
+2. character movement and health definitions;
+3. NPC perception and patrol profiles;
+4. biome and map-generation profiles;
+5. visual-effects budgets and pooling prewarm settings.
+
+## Assembly boundaries
+
+Do not introduce assembly definition files until the asset folders have been moved in the Unity Editor and all current scripts compile. Afterwards, use small assembly boundaries such as:
+
+- `ZoneUA.Core`;
+- `ZoneUA.Gameplay`;
+- `ZoneUA.World`;
+- `ZoneUA.UI`;
+- `ZoneUA.Editor`;
+- `ZoneUA.Tests`.
+
+Introducing asmdefs too early can expose hidden circular dependencies and block the entire project from compiling.
+
+## Validation before merge
+
+1. Open with Unity 2022.2.8f1.
+2. Allow a clean import and inspect the Console.
+3. Confirm that renamed scripts have no `Missing Script` components.
+4. Smoke-test player movement, camera, weapon switching, reload, NPC patrol/combat, damage/death, map regeneration and grass sorting.
+5. Verify pooled blood and particle effects across repeated hits.
+6. Profile representative combat and generated-world scenes before selecting prewarm counts or hard pool limits.
+7. Move assets only through the Unity Project window.
