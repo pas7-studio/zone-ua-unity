@@ -26,6 +26,8 @@ public sealed class GlobalSystem : MonoBehaviour
     [FormerlySerializedAs("UIAmmoSystem")]
     [SerializeField] private UIAmmoSystem ammoUI;
 
+    private RuntimeObjectPool objectPool;
+
     public Vector2 WeaponSpawnOffset => new Vector2(weaponXOffset * 10f, weaponYOffset * 10f);
     public int BloodAmount => bloodAmount;
     public float BloodSpawnRadius => spawnRadius;
@@ -34,6 +36,7 @@ public sealed class GlobalSystem : MonoBehaviour
     public ParticleSystem BloodParticleSystem => bloodParticleSystem;
     public Transform RuntimeContainer => runtimeContainer;
     public UIAmmoSystem AmmoUI => ammoUI;
+    public RuntimeObjectPool ObjectPool => objectPool;
 
     private void Awake()
     {
@@ -45,6 +48,7 @@ public sealed class GlobalSystem : MonoBehaviour
         }
 
         Instance = this;
+        EnsureRuntimeInfrastructure();
     }
 
     private void OnDestroy()
@@ -53,6 +57,54 @@ public sealed class GlobalSystem : MonoBehaviour
         {
             Instance = null;
         }
+    }
+
+    public GameObject Spawn(GameObject prefab, Vector3 position, Quaternion rotation, Transform parent = null)
+    {
+        if (prefab == null)
+        {
+            return null;
+        }
+
+        EnsureRuntimeInfrastructure();
+        return objectPool.Spawn(prefab, position, rotation, parent);
+    }
+
+    public T Spawn<T>(T prefab, Vector3 position, Quaternion rotation, Transform parent = null)
+        where T : Component
+    {
+        if (prefab == null)
+        {
+            return null;
+        }
+
+        EnsureRuntimeInfrastructure();
+        return objectPool.Spawn(prefab, position, rotation, parent);
+    }
+
+    public void Release(GameObject instance)
+    {
+        if (instance == null)
+        {
+            return;
+        }
+
+        EnsureRuntimeInfrastructure();
+        if (!objectPool.Release(instance))
+        {
+            Destroy(instance);
+        }
+    }
+
+    public void ReleaseAfter(GameObject instance, float delay)
+    {
+        if (instance == null)
+        {
+            return;
+        }
+
+        EnsureRuntimeInfrastructure();
+        objectPool.ReleaseAfter(instance, delay);
     }
 
     public bool TryGetRandomBlood(out GameObject prefab)
@@ -68,11 +120,26 @@ public sealed class GlobalSystem : MonoBehaviour
         return prefab != null;
     }
 
-    // Kept for compatibility with existing scene events and older code.
     public GameObject getRandomBlood()
     {
         TryGetRandomBlood(out GameObject prefab);
         return prefab;
+    }
+
+    private void EnsureRuntimeInfrastructure()
+    {
+        if (runtimeContainer == null)
+        {
+            GameObject container = new GameObject("Runtime Objects");
+            container.transform.SetParent(transform, false);
+            runtimeContainer = container.transform;
+        }
+
+        objectPool = runtimeContainer.GetComponent<RuntimeObjectPool>();
+        if (objectPool == null)
+        {
+            objectPool = runtimeContainer.gameObject.AddComponent<RuntimeObjectPool>();
+        }
     }
 
     private void OnValidate()
