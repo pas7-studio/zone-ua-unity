@@ -1,0 +1,46 @@
+# =========================
+# Unity
+# =========================
+[Dd]ebug/
+[Dd]ebug[Rr]eleases/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]64/
+[Aa]rm64/
+[Bb]uild/
+[Bb]uilds/
+[Bb]in/
+[Ll]ogs/
+[Ll]og/
+[Tt]emp/
+[Ll]ibrary/
+[Uu]ser[Ss]ettings/
+*.csproj
+*.sln
+*.DotSettings.user
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.build.asset
+*.build.log
+*.buildreport
+*.cachefs
+*.crashreport
+*.heap
+*.log
+*.manifest
+*.mdb
+*.o
+*.pdb
+*.unitypackage
+Native/
+MemoryCaptures/
+sysinfo.txt
+sysinfo_*.txt
+crashlytics-*.txt
+icon.png
+icon64x64.png
+*.db

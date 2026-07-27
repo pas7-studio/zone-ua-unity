@@ -1,0 +1,68 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &6422557121332752861
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2795667117876117036}
+  - component: {fileID: 4680899118180527423}
+  m_Layer: 0
+  m_Name: GlobalSystem
+  m_TagString: System
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2795667117876117036
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6422557121332752861}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 16.093588, y: -17.681448, z: 0.020718496}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 20
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &4680899118180527423
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6422557121332752861}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a19507e8b3331646962f65275575179, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  bloodAmount: 3
+  spawnRadius: 1
+  bloodImpulsSpeed: 2
+  bloodImpulseDuration: 10
+  bloodPrefabs:
+  - {fileID: 7715069805748310216, guid: 173125a6321950449888ade6b983344d, type: 3}
+  - {fileID: 1157356990674657255, guid: ed59e4c8c0c4cff4da77be372e8604e1, type: 3}
+  - {fileID: 7808629340842936045, guid: 36df26f386d975d46b540b1729f4dadb, type: 3}
+  - {fileID: 4436589333623388923, guid: 52bff0c43fcaa6c4d9ae0f7a77df020a, type: 3}
+  - {fileID: 6538544610577273452, guid: 097f7e5acb314d543bcfbcece56a2c9b, type: 3}
+  - {fileID: 3313520641378888662, guid: f6dd9f35d3471d74e842aaa3e7323d81, type: 3}
+  - {fileID: 108108306115314718, guid: 01170ea92f3d876459dc02a3d7831322, type: 3}
+  - {fileID: 2841829419217675373, guid: 760cb9a08c44c2e4398b8a0ae54f5dc6, type: 3}
+  - {fileID: 1538477874663342758, guid: 9d0f2cf6a67575a41b5e7cc1d6a90ae7, type: 3}
+  - {fileID: 3632873603033345224, guid: 06c4c3358976107408d1fa57ce9033a0, type: 3}
+  - {fileID: 8157803630585916224, guid: 5ff9b52f43da38447a99895361935e4f, type: 3}
+  - {fileID: 6363290899549976521, guid: 65a61952c48319f428a19d1d82c9d33f, type: 3}
+  - {fileID: 6363290899549976521, guid: 65a61952c48319f428a19d1d82c9d33f, type: 3}
+  - {fileID: 6026551897862052370, guid: a34dcbbb461ff274695982b585726f05, type: 3}
+  - {fileID: 6190582504977470088, guid: 49191f0dce04cba4094de67a6e3ac8c0, type: 3}
+  bloodParticleSystem: {fileID: 9137406945412205802, guid: 7b2f518934fdbe046a3c724671933b72, type: 3}
+  garbadge: {fileID: 0}
