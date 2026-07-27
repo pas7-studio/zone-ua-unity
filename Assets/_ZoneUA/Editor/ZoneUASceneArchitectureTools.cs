@@ -12,18 +12,12 @@ namespace ZoneUA.EditorValidation
 {
     public static class ZoneUASceneArchitectureTools
     {
-        private const string ScenesRoot = "Assets/_ZoneUA/Scenes";
-        private const string BootstrapFolder = ScenesRoot + "/Bootstrap";
-        private const string ProductionFolder = ScenesRoot + "/Production";
-        private const string DevelopmentFolder = ScenesRoot + "/Development";
-        private const string TestsFolder = ScenesRoot + "/Tests";
-        private const string SettingsFolder = "Assets/_ZoneUA/Settings";
-
-        private const string BootstrapScenePath = BootstrapFolder + "/Bootstrap.unity";
-        private const string ProductionScenePath = ProductionFolder + "/Production.unity";
-        private const string DevelopmentScenePath = DevelopmentFolder + "/Development.unity";
-        private const string TestScenePath = TestsFolder + "/Tests.unity";
-        private const string CatalogPath = SettingsFolder + "/SceneCatalog.asset";
+        public const string ScenesRoot = "Assets/_ZoneUA/Scenes";
+        public const string BootstrapScenePath = ScenesRoot + "/Bootstrap/Bootstrap.unity";
+        public const string ProductionScenePath = ScenesRoot + "/Production/Production.unity";
+        public const string DevelopmentScenePath = ScenesRoot + "/Development/Development.unity";
+        public const string TestScenePath = ScenesRoot + "/Tests/Tests.unity";
+        public const string CatalogPath = "Assets/_ZoneUA/Settings/SceneCatalog.asset";
 
         [MenuItem("Zone UA/Scenes/Create Scene Architecture", priority = 1)]
         public static void CreateSceneArchitecture()
@@ -44,6 +38,19 @@ namespace ZoneUA.EditorValidation
 
         [MenuItem("Zone UA/Scenes/Validate Scene Architecture", priority = 2)]
         public static void ValidateSceneArchitecture()
+        {
+            IReadOnlyList<string> issues = CollectValidationIssues();
+            if (issues.Count == 0)
+            {
+                Debug.Log("Zone UA scene architecture is valid.");
+                return;
+            }
+
+            foreach (string issue in issues) Debug.LogError("[Scene Architecture] " + issue);
+            EditorUtility.DisplayDialog("Scene architecture validation", $"Found {issues.Count} issue(s). See Console for details.", "OK");
+        }
+
+        public static IReadOnlyList<string> CollectValidationIssues()
         {
             var issues = new List<string>();
             SceneCatalog catalog = AssetDatabase.LoadAssetAtPath<SceneCatalog>(CatalogPath);
@@ -75,15 +82,7 @@ namespace ZoneUA.EditorValidation
 
             if (!File.Exists(BootstrapScenePath)) issues.Add($"Missing {BootstrapScenePath}.");
             if (!File.Exists(ProductionScenePath)) issues.Add($"Missing {ProductionScenePath}.");
-
-            if (issues.Count == 0)
-            {
-                Debug.Log("Zone UA scene architecture is valid.");
-                return;
-            }
-
-            foreach (string issue in issues) Debug.LogError("[Scene Architecture] " + issue);
-            EditorUtility.DisplayDialog("Scene architecture validation", $"Found {issues.Count} issue(s). See Console for details.", "OK");
+            return issues;
         }
 
         private static void EnsureFolders()
@@ -132,18 +131,26 @@ namespace ZoneUA.EditorValidation
         {
             if (File.Exists(BootstrapScenePath)) return;
 
-            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            GameObject root = new GameObject("ZoneUA_Bootstrap");
-            AddComponentByName(root, "GlobalSystem");
-            Component bootstrapper = AddComponentByName(root, "SceneBootstrapper");
-            if (bootstrapper != null)
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            try
             {
-                SerializedObject serialized = new SerializedObject(bootstrapper);
-                SerializedProperty catalogProperty = serialized.FindProperty("catalog");
-                if (catalogProperty != null) catalogProperty.objectReferenceValue = catalog;
-                serialized.ApplyModifiedPropertiesWithoutUndo();
+                GameObject root = new GameObject("ZoneUA_Bootstrap");
+                SceneManager.MoveGameObjectToScene(root, scene);
+                AddComponentByName(root, "GlobalSystem");
+                Component bootstrapper = AddComponentByName(root, "SceneBootstrapper");
+                if (bootstrapper != null)
+                {
+                    SerializedObject serialized = new SerializedObject(bootstrapper);
+                    SerializedProperty catalogProperty = serialized.FindProperty("catalog");
+                    if (catalogProperty != null) catalogProperty.objectReferenceValue = catalog;
+                    serialized.ApplyModifiedPropertiesWithoutUndo();
+                }
+                EditorSceneManager.SaveScene(scene, BootstrapScenePath);
             }
-            EditorSceneManager.SaveScene(scene, BootstrapScenePath);
+            finally
+            {
+                EditorSceneManager.CloseScene(scene, true);
+            }
         }
 
         private static Component AddComponentByName(GameObject target, string typeName)
@@ -162,9 +169,17 @@ namespace ZoneUA.EditorValidation
         private static void EnsureEmptyScene(string path, string rootName)
         {
             if (File.Exists(path)) return;
-            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            new GameObject(rootName);
-            EditorSceneManager.SaveScene(scene, path);
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            try
+            {
+                GameObject root = new GameObject(rootName);
+                SceneManager.MoveGameObjectToScene(root, scene);
+                EditorSceneManager.SaveScene(scene, path);
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(scene, true);
+            }
         }
 
         private static void ConfigureBuildSettings()
