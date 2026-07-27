@@ -1,0 +1,14 @@
+{
+  "name": "ZoneUA.Inventory",
+  "rootNamespace": "ZoneUA.Inventory",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
