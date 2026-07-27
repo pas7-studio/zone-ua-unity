@@ -1,101 +1,240 @@
 using Assets.Script;
-using Unity.VisualScripting;
+using System;
 using UnityEngine;
-using static UnityEngine.RuleTile.TilingRuleOutput;
+using ZoneUA.Combat;
 
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(Animator))]
 [RequireComponent(typeof(Death))]
-public class Health : MonoBehaviour
+public sealed class Health : MonoBehaviour, IDamageable
 {
-    [SerializeField]
-    private int currentHeals = 100;
-    [SerializeField]
+    [Header("Health Configuration")]
+    [SerializeField, Min(1), Tooltip("Maximum health for this character.")]
     private int defaultHeals = 100;
-    [SerializeField]
-    private bool isImunable = false;
-    [SerializeField]
-    private bool isAlive = true;
 
-    private Animator animator;
+    [SerializeField, Tooltip("Ignores incoming damage while enabled.")]
+    private bool isImunable;
+
+    [Header("Runtime State (Read Only)")]
+    [SerializeField, HideInInspector] private int currentHeals = 100;
+    [SerializeField, HideInInspector] private bool isAlive = true;
+
     private Death death;
     private GlobalSystem globalSystem;
 
+    public event Action<DamageInfo> Damaged;
+    public event Action<int, int> HealthChanged;
+    public event Action<int> Healed;
+    public event Action Died;
+
+    public int CurrentHealth => currentHeals;
+    public int MaximumHealth => defaultHeals;
+    public bool IsAlive => isAlive;
+    public bool IsImmune => isImunable;
+
+    private void Awake()
+    {
+        death = GetComponent<Death>();
+        currentHeals = Mathf.Clamp(currentHeals, 0, defaultHeals);
+        isAlive = currentHeals > 0;
+    }
+
     private void Start()
     {
-        animator = GetComponent<Animator>();
-        death = GetComponent<Death>();
-        globalSystem = GameObject.FindGameObjectWithTag("System").GetComponent<GlobalSystem>();
-    }
+        globalSystem = GlobalSystem.Instance;
 
-    public void HealthLogic()
-    {
-        if(currentHeals == 0)
+        if (!isAlive)
         {
-            if (animator != null)
-            {
-                isAlive = false;
-                death.Dead();
-            }
+            Die();
         }
     }
 
-    public void setHeals(int heals)
+    public void SetHealth(int health)
     {
-        currentHeals = Mathf.Clamp(heals, 0, defaultHeals);
+        if (!isAlive)
+        {
+            return;
+        }
+
+        int previousHealth = currentHeals;
+        currentHeals = Mathf.Clamp(health, 0, defaultHeals);
+        NotifyHealthChanged(previousHealth);
+
+        if (currentHeals == 0)
+        {
+            Die();
+        }
     }
 
-    public void restoreSomeHeals(int amount)
+    public void RestoreHealth(int amount)
     {
+        if (!isAlive || amount <= 0)
+        {
+            return;
+        }
+
+        int previousHealth = currentHeals;
         currentHeals = Mathf.Clamp(currentHeals + amount, 0, defaultHeals);
-    }
+        int restoredAmount = currentHeals - previousHealth;
 
-    public void restoreDefaultHeals()
-    {
-        currentHeals = defaultHeals;
-    }
-
-    public int getHeals()
-    {
-        return currentHeals;
-    }
-
-    public void receiveDamage(int damageAmount)
-    {
-        if (!isImunable)
+        if (restoredAmount <= 0)
         {
-            currentHeals -= damageAmount;
-            currentHeals = Mathf.Clamp(currentHeals, 0, defaultHeals);
-            SpawnBlood();
-            HealthLogic();
+            return;
+        }
+
+        Healed?.Invoke(restoredAmount);
+        NotifyHealthChanged(previousHealth);
+    }
+
+    public void RestoreFullHealth()
+    {
+        RestoreHealth(defaultHeals - currentHeals);
+    }
+
+    public void ReceiveDamage(in DamageInfo damageInfo)
+    {
+        if (!isAlive || isImunable || damageInfo.Amount <= 0)
+        {
+            return;
+        }
+
+        int previousHealth = currentHeals;
+        currentHeals = Mathf.Max(0, currentHeals - damageInfo.Amount);
+
+        Damaged?.Invoke(damageInfo);
+        NotifyHealthChanged(previousHealth);
+        SpawnBlood();
+
+        if (currentHeals == 0)
+        {
+            Die();
         }
     }
 
-    public bool getIsAlive()
+    public void ReceiveDamage(int damageAmount)
     {
-        return isAlive;
+        DamageInfo damageInfo = new DamageInfo(
+            damageAmount,
+            null,
+            null,
+            transform.position,
+            Vector2.zero,
+            DamageType.Environment);
+
+        ReceiveDamage(in damageInfo);
+    }
+
+    private void NotifyHealthChanged(int previousHealth)
+    {
+        if (previousHealth != currentHeals)
+        {
+            HealthChanged?.Invoke(currentHeals, defaultHeals);
+        }
+    }
+
+    private void Die()
+    {
+        if (death == null || death.IsDead)
+        {
+            return;
+        }
+
+        isAlive = false;
+        death.Dead();
+        Died?.Invoke();
     }
 
     private void SpawnBlood()
     {
-        for (int i = 0; i < globalSystem.bloodAmount; i++)
+        globalSystem ??= GlobalSystem.Instance;
+
+        if (globalSystem == null)
         {
-            Vector2 spawnPosition = (Vector2)transform.position + Random.insideUnitCircle * globalSystem.spawnRadius;
+            return;
+        }
 
-            Quaternion bloodDropRotation = Quaternion.Euler(0.0f, 0.0f, Random.Range(-360,360));
-            Vector2 forceDirection = -transform.up * globalSystem.bloodImpulsSpeed;
+        SpawnBloodEffect();
 
-            SpawnBloodEffect();
-            GameObject bloodDrop = Instantiate(globalSystem.getRandomBlood(), spawnPosition, bloodDropRotation, globalSystem.garbadge);
-            bloodDrop.GetComponent<Rigidbody2D>().AddForce(forceDirection, ForceMode2D.Impulse);
-            StartCoroutine(Tools.AttenuateAmmoImpulse(bloodDrop.GetComponent<Rigidbody2D>(), globalSystem.bloodImpulseDuration));
+        for (int i = 0; i < globalSystem.BloodAmount; i++)
+        {
+            if (!globalSystem.TryGetRandomBlood(out GameObject bloodPrefab))
+            {
+                return;
+            }
+
+            Vector2 spawnPosition =
+                (Vector2)transform.position +
+                UnityEngine.Random.insideUnitCircle * globalSystem.BloodSpawnRadius;
+
+            Quaternion rotation = Quaternion.Euler(
+                0f,
+                0f,
+                UnityEngine.Random.Range(-180f, 180f));
+
+            GameObject bloodDrop = globalSystem.Spawn(
+                bloodPrefab,
+                spawnPosition,
+                rotation,
+                globalSystem.RuntimeContainer);
+
+            if (bloodDrop == null || !bloodDrop.TryGetComponent(out Rigidbody2D body))
+            {
+                continue;
+            }
+
+            Vector2 forceDirection =
+                UnityEngine.Random.insideUnitCircle.normalized * globalSystem.BloodImpulseSpeed;
+
+            body.AddForce(forceDirection, ForceMode2D.Impulse);
+            StartCoroutine(Tools.AttenuateVelocity(body, globalSystem.BloodImpulseDuration));
         }
     }
 
-    public void SpawnBloodEffect()
+    private void SpawnBloodEffect()
     {
-        var particleSystemInstance = Instantiate(globalSystem.bloodParticleSystem, transform.position, globalSystem.bloodParticleSystem.transform.rotation);
-        particleSystemInstance.Play();
-        Destroy(particleSystemInstance.gameObject, globalSystem.bloodParticleSystem.main.startLifetime.constant);
+        ParticleSystem bloodEffectPrefab = globalSystem.BloodParticleSystem;
+        if (bloodEffectPrefab == null)
+        {
+            return;
+        }
+
+        ParticleSystem instance = globalSystem.Spawn(
+            bloodEffectPrefab,
+            transform.position,
+            bloodEffectPrefab.transform.rotation,
+            globalSystem.RuntimeContainer);
+
+        if (instance == null)
+        {
+            return;
+        }
+
+        instance.Play();
+
+        ParticleSystem.MainModule main = instance.main;
+        float lifetime = main.duration + main.startLifetime.constantMax;
+        globalSystem.ReleaseAfter(instance.gameObject, Mathf.Max(0.1f, lifetime));
+    }
+
+    public void HealthLogic()
+    {
+        if (currentHeals <= 0)
+        {
+            Die();
+        }
+    }
+
+    // Compatibility API retained until scenes, prefabs and UnityEvents are audited.
+    public void setHeals(int heals) => SetHealth(heals);
+    public void restoreSomeHeals(int amount) => RestoreHealth(amount);
+    public void restoreDefaultHeals() => RestoreFullHealth();
+    public int getHeals() => CurrentHealth;
+    public void receiveDamage(int damageAmount) => ReceiveDamage(damageAmount);
+    public bool getIsAlive() => IsAlive;
+
+    private void OnValidate()
+    {
+        defaultHeals = Mathf.Max(1, defaultHeals);
+        currentHeals = Mathf.Clamp(currentHeals, 0, defaultHeals);
     }
 }

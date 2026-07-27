@@ -1,86 +1,94 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(Collider2D))]
-public class SpriteMaskController : MonoBehaviour
+public sealed class SpriteMaskController : MonoBehaviour
 {
-    [SerializeField]
-    private SpriteRenderer playerSpriteRenderer;
+    [SerializeField] private SpriteRenderer playerSpriteRenderer;
+    [SerializeField] private SpriteMask spriteMask;
 
-    [SerializeField]
-    private SpriteMask spriteMask;
+    private readonly HashSet<SpriteRenderer> overlappingRenderers =
+        new HashSet<SpriteRenderer>();
 
-    private Collider2D spriteMaskCollider;
-
-    //List of objects that we are colliding with
-    private List<SpriteRenderer> otherRendereres = new List<SpriteRenderer>();
-
-    public bool checking = false;
+    private Collider2D maskCollider;
 
     private void Awake()
     {
-        spriteMaskCollider = GetComponent<Collider2D>();
-        spriteMaskCollider.isTrigger = true;
+        maskCollider = GetComponent<Collider2D>();
+        maskCollider.isTrigger = true;
+        SetMaskState(false);
     }
 
-    private void Update()
+    private void LateUpdate()
     {
-        if (checking)
+        if (overlappingRenderers.Count == 0 ||
+            playerSpriteRenderer == null ||
+            spriteMask == null)
         {
-            foreach (SpriteRenderer renderer in otherRendereres)
+            SetMaskState(false);
+            return;
+        }
+
+        bool shouldMask = false;
+        overlappingRenderers.RemoveWhere(renderer => renderer == null);
+
+        foreach (SpriteRenderer renderer in overlappingRenderers)
+        {
+            if (playerSpriteRenderer.sortingLayerID == renderer.sortingLayerID &&
+                playerSpriteRenderer.sortingOrder <= renderer.sortingOrder &&
+                playerSpriteRenderer.transform.position.y > renderer.transform.position.y)
             {
-                //check if the object is on the same layer and is in front of the player sprite
-
-                if (
-                    playerSpriteRenderer.sortingLayerName == renderer.sortingLayerName
-                    && playerSpriteRenderer.sortingOrder <= renderer.sortingOrder
-                    //check the Y sorting order
-                    && playerSpriteRenderer.transform.position.y > renderer.transform.position.y)
-                {
-                    //if yes enable the sprite mask
-                    spriteMask.enabled = true;
-                    playerSpriteRenderer.maskInteraction = SpriteMaskInteraction.VisibleInsideMask;
-                    return;
-                }
-                else
-                {
-                    //else disable the sprite mask
-                    spriteMask.enabled = false;
-                    playerSpriteRenderer.maskInteraction = SpriteMaskInteraction.None;
-                }
-
+                shouldMask = true;
+                break;
             }
         }
+
+        SetMaskState(shouldMask);
     }
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
-        if (collision.isTrigger == false)
-            return;
-        SpriteRenderer spriteRenderer = collision.GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
+        if (!collision.isTrigger)
         {
-            otherRendereres.Add(spriteRenderer);
-            checking = true;
+            return;
+        }
+
+        SpriteRenderer renderer = collision.GetComponent<SpriteRenderer>();
+        if (renderer != null)
+        {
+            overlappingRenderers.Add(renderer);
         }
     }
 
     private void OnTriggerExit2D(Collider2D collision)
     {
-        if (collision.isTrigger == false)
-            return;
-        SpriteRenderer spriteRenderer = collision.GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
+        if (!collision.isTrigger)
         {
-            otherRendereres.Remove(spriteRenderer);
-            if (otherRendereres.Count <= 0)
-            {
-                checking = false;
-                spriteMask.enabled = false;
-                playerSpriteRenderer.maskInteraction = SpriteMaskInteraction.None;
-            }
-
+            return;
         }
+
+        SpriteRenderer renderer = collision.GetComponent<SpriteRenderer>();
+        if (renderer != null)
+        {
+            overlappingRenderers.Remove(renderer);
+        }
+
+        if (overlappingRenderers.Count == 0)
+        {
+            SetMaskState(false);
+        }
+    }
+
+    private void SetMaskState(bool state)
+    {
+        if (spriteMask == null || playerSpriteRenderer == null)
+        {
+            return;
+        }
+
+        spriteMask.enabled = state;
+        playerSpriteRenderer.maskInteraction = state
+            ? SpriteMaskInteraction.VisibleInsideMask
+            : SpriteMaskInteraction.None;
     }
 }

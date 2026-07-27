@@ -1,29 +1,23 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Animator))]
-public class RootMotionController : MonoBehaviour
+public sealed class RootMotionController : MonoBehaviour
 {
-    private Animator animator;
-    private int enableRootMotionHash;
+    private static readonly int EnableRootMotionHash =
+        Animator.StringToHash("EnableRootMotion");
 
-    private void Start()
+    private Animator animator;
+
+    private void Awake()
     {
         animator = GetComponent<Animator>();
-        enableRootMotionHash = Animator.StringToHash("EnableRootMotion");
     }
 
     private void Update()
     {
-        // check if the animation is playing
-        if (animator.GetCurrentAnimatorStateInfo(0).normalizedTime < 1)
-        {
-            // set EnableRootMotion parameter to true
-            animator.SetBool(enableRootMotionHash, true);
-        }
-        else
-        {
-            // set EnableRootMotion parameter to false
-            animator.SetBool(enableRootMotionHash, false);
-        }
+        bool animationIsPlaying =
+            animator.GetCurrentAnimatorStateInfo(0).normalizedTime < 1f;
+
+        animator.SetBool(EnableRootMotionHash, animationIsPlaying);
     }
 }

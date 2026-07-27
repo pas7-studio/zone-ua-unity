@@ -1,36 +1,54 @@
 using UnityEngine;
 
-public class CameraFollow : MonoBehaviour
+public sealed class CameraFollow : MonoBehaviour
 {
-    public Transform target; // the target to follow
-    public float smoothSpeed = 0.001f; // the speed at which the camera moves
+    [SerializeField] private Transform target;
+    [SerializeField, Range(0f, 1f)] private float smoothSpeed = 0.001f;
+    [SerializeField] private Vector3 offset;
+    [SerializeField, Min(0f)] private float mouseMoveSpeed = 0.2f;
 
-    public Vector3 offset; // the offset from the target's position
-    public float mouseMoveSpeed = 0.2f;    // The speed at which the camera moves towards the mouse direction
+    private Camera controlledCamera;
+    private float staticZPosition;
 
-    private float staticZPosition = 0f; // The static Z position for the camera
-
-    private void Start()
+    private void Awake()
     {
+        controlledCamera = GetComponent<Camera>();
+        if (controlledCamera == null)
+        {
+            controlledCamera = Camera.main;
+        }
+
         staticZPosition = transform.position.z;
     }
 
-    void LateUpdate()
+    private void LateUpdate()
     {
-        Vector3 desiredPosition = target.position + offset; // calculate the desired position of the camera
-        desiredPosition.z = staticZPosition; // fix the Z-axis of the camera
-        Vector3 smoothedPosition = Vector3.Lerp(transform.position, desiredPosition, smoothSpeed); // smoothly move the camera towards the desired position
-        transform.position = smoothedPosition; // set the camera's position to the smoothed position
-
-        // Move the camera towards the mouse direction when the right mouse button is pressed
-        if (Input.GetMouseButton(1))
+        if (target == null)
         {
-            Vector3 mousePosition = Input.mousePosition;
-            mousePosition.z = staticZPosition;
-            Vector3 mouseWorldPosition = Camera.main.ScreenToWorldPoint(mousePosition);
-            Vector3 moveDirection = (mouseWorldPosition - transform.position).normalized;
-            moveDirection.z = staticZPosition;
-            transform.position += moveDirection * mouseMoveSpeed;
+            return;
+        }
+
+        Vector3 desiredPosition = target.position + offset;
+        desiredPosition.z = staticZPosition;
+        transform.position = Vector3.Lerp(transform.position, desiredPosition, smoothSpeed);
+
+        if (!Input.GetMouseButton(1) || controlledCamera == null)
+        {
+            return;
+        }
+
+        Vector3 mouseWorldPosition = controlledCamera.ScreenToWorldPoint(Input.mousePosition);
+        mouseWorldPosition.z = staticZPosition;
+
+        Vector3 moveDirection = mouseWorldPosition - transform.position;
+        moveDirection.z = 0f;
+
+        if (moveDirection.sqrMagnitude > Mathf.Epsilon)
+        {
+            transform.position += moveDirection.normalized * mouseMoveSpeed;
+            Vector3 position = transform.position;
+            position.z = staticZPosition;
+            transform.position = position;
         }
     }
 }

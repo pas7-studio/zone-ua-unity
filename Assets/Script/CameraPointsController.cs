@@ -1,26 +1,56 @@
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
-public class CameraPointsController : MonoBehaviour
+public sealed class CameraPointsController : MonoBehaviour
 {
-    [SerializeField] private List<GameObject> pointsList;
+    [SerializeField] private List<GameObject> pointsList = new List<GameObject>();
 
-    // Start is called before the first frame update
-    void Start()
+    private readonly Dictionary<string, GameObject> pointsByName =
+        new Dictionary<string, GameObject>();
+
+    private void Awake()
     {
-        pointsList = GameObject.FindGameObjectsWithTag("CameraPoint").ToList();
+        RebuildLookup();
     }
 
-    // Update is called once per frame
-    void Update()
+    public void RebuildLookup()
     {
-        
+        pointsByName.Clear();
+
+        if (pointsList == null || pointsList.Count == 0)
+        {
+            GameObject[] discoveredPoints = GameObject.FindGameObjectsWithTag("CameraPoint");
+            pointsList = new List<GameObject>(discoveredPoints);
+        }
+
+        for (int i = 0; i < pointsList.Count; i++)
+        {
+            GameObject pointObject = pointsList[i];
+            if (pointObject == null ||
+                !pointObject.TryGetComponent(out CameraPoint point) ||
+                string.IsNullOrWhiteSpace(point.PointName))
+            {
+                continue;
+            }
+
+            if (!pointsByName.TryAdd(point.PointName, pointObject))
+            {
+                Debug.LogWarning($"Duplicate camera point name '{point.PointName}'.", pointObject);
+            }
+        }
     }
 
-    public GameObject getPointByName(string name)
+    public GameObject GetPointByName(string pointName)
     {
-        return pointsList.Find(fn =>  fn.GetComponent<CameraPoint>().pointName == name);
+        if (string.IsNullOrWhiteSpace(pointName))
+        {
+            return null;
+        }
+
+        pointsByName.TryGetValue(pointName, out GameObject point);
+        return point;
     }
+
+    // Backwards-compatible method name.
+    public GameObject getPointByName(string pointName) => GetPointByName(pointName);
 }

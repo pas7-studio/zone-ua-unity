@@ -1,69 +1,81 @@
-using Unity.Mathematics;
 using UnityEngine;
-using static UnityEngine.RuleTile.TilingRuleOutput;
 
 [RequireComponent(typeof(Animator))]
 [RequireComponent(typeof(Rigidbody2D))]
-public class CharacterCustomController : MonoBehaviour
+public sealed class CharacterCustomController : MonoBehaviour
 {
-    public float currentSpeed = 0f;
-    public float speed = 5.0f;
-    public float runSpeed = 10.0f;
+    private static readonly int SpeedHash = Animator.StringToHash("Speed");
 
-    private Rigidbody2D rb2d;
-    private Animator anim;
+    [Header("Movement")]
+    [SerializeField, Min(0f)] private float currentSpeed;
+    [SerializeField, Min(0f)] private float speed = 5f;
+    [SerializeField, Min(0f)] private float runSpeed = 10f;
 
-    private void Start()
+    private Rigidbody2D body;
+    private Animator animator;
+    private Camera mainCamera;
+    private Vector2 movementInput;
+    private bool sprintRequested;
+
+    public float CurrentSpeed => currentSpeed;
+
+    private void Awake()
     {
-        anim = GetComponent<Animator>();
-        rb2d = GetComponent<Rigidbody2D>();
-    }
-
-    private void FixedUpdate()
-    {
-        float horizontal = Input.GetAxis("Horizontal");
-        float vertical = Input.GetAxis("Vertical");
-
-        if (horizontal != 0f || vertical != 0f)
-        {
-
-            Vector2 movement = new Vector2(horizontal, vertical);
-            movement.Normalize();
-
-            if (Input.GetKey(KeyCode.LeftShift))
-            {
-                currentSpeed = runSpeed;
-                rb2d.MovePosition(rb2d.position + movement * runSpeed * Time.fixedDeltaTime);
-            }
-            else
-            {
-                currentSpeed = speed;
-                rb2d.MovePosition(rb2d.position + movement * speed * Time.fixedDeltaTime);
-            }
-        }
-        else
-        {
-            currentSpeed = 0f;
-        }
-
-        anim.SetFloat("Speed", currentSpeed);
+        animator = GetComponent<Animator>();
+        body = GetComponent<Rigidbody2D>();
+        mainCamera = Camera.main;
     }
 
     private void Update()
     {
-        Vector3 mousePos = Input.mousePosition;
-        mousePos.z = Camera.main.nearClipPlane;
-        Vector3 worldPos = Camera.main.ScreenToWorldPoint(mousePos);
-        Vector3 direction = worldPos - transform.position;
+        movementInput = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+        movementInput = Vector2.ClampMagnitude(movementInput, 1f);
+        sprintRequested = Input.GetKey(KeyCode.LeftShift);
 
-        if (direction.x > 0 && transform.rotation.y == 1f)
+        UpdateFacing();
+    }
+
+    private void FixedUpdate()
+    {
+        float targetSpeed = movementInput.sqrMagnitude > 0f
+            ? (sprintRequested ? runSpeed : speed)
+            : 0f;
+
+        currentSpeed = targetSpeed;
+
+        if (targetSpeed > 0f)
         {
-            transform.rotation = new Quaternion(0f, 0f, 0f, 0f);
+            body.MovePosition(body.position + movementInput * targetSpeed * Time.fixedDeltaTime);
         }
-        else if(direction.x <= 0 && transform.rotation.y == 0f)
+
+        animator.SetFloat(SpeedHash, currentSpeed);
+    }
+
+    private void UpdateFacing()
+    {
+        if (mainCamera == null)
         {
-            transform.rotation = new Quaternion(0f, 180f, 0f, 0f);
+            mainCamera = Camera.main;
+        }
+
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        Vector3 mouseWorldPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        bool shouldFaceLeft = mouseWorldPosition.x <= transform.position.x;
+        float targetYRotation = shouldFaceLeft ? 180f : 0f;
+
+        if (!Mathf.Approximately(transform.eulerAngles.y, targetYRotation))
+        {
+            transform.rotation = Quaternion.Euler(0f, targetYRotation, 0f);
         }
     }
 
+    private void OnValidate()
+    {
+        speed = Mathf.Max(0f, speed);
+        runSpeed = Mathf.Max(speed, runSpeed);
+    }
 }

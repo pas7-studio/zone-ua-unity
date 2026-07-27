@@ -1,62 +1,113 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class ChunkManager : MonoBehaviour
+public sealed class ChunkManager : MonoBehaviour
 {
-    public Camera mainCamera;
-    public GameObject chunkParent;
-    public float updateInterval = 0.5f;
+    [SerializeField] private Camera mainCamera;
+    [SerializeField] private GameObject chunkParent;
+    [SerializeField, Min(0.02f)] private float updateInterval = 0.5f;
+    [SerializeField, Min(0f)] private float buffer = 0.5f;
 
-    private List<GameObject> chunks;
+    private readonly List<ChunkEntry> chunks = new List<ChunkEntry>();
+    private readonly Plane[] frustumPlanes = new Plane[6];
+
+    private float updateTimer;
+
+    private sealed class ChunkEntry
+    {
+        public GameObject GameObject;
+        public Renderer Renderer;
+    }
+
+    private void Awake()
+    {
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main;
+        }
+    }
 
     private void Start()
     {
-        // Get a reference to all the chunk game objects
-        chunks = new List<GameObject>();
-        foreach (Transform child in chunkParent.transform)
-        {
-            chunks.Add(child.gameObject);
-        }
-
-        // Call the UpdateChunksVisibility method every updateInterval seconds
-        InvokeRepeating("UpdateChunksVisibility", 0f, updateInterval);
+        RefreshChunks();
+        UpdateChunksVisibility();
     }
 
-    public float buffer = 0.5f;
-    private void UpdateChunksVisibility()
+    private void Update()
     {
-        // Calculate the camera frustum planes with a buffer zone
-        
-        Plane[] frustumPlanes = GeometryUtility.CalculateFrustumPlanes(mainCamera);
-        for (int i = 0; i < 6; i++)
+        updateTimer += Time.deltaTime;
+        if (updateTimer < updateInterval)
         {
-            Vector3 normal = frustumPlanes[i].normal;
-            Vector3 pointOnPlane = frustumPlanes[i].ClosestPointOnPlane(mainCamera.transform.position);
-            Vector3 pointWithBuffer = pointOnPlane + normal * buffer;
-            frustumPlanes[i] = new Plane(normal, pointWithBuffer);
+            return;
         }
 
-        // Loop through all the chunks
-        foreach (GameObject chunk in chunks)
-        {
-            // Get the chunk's SpriteRenderer component
-            SpriteRenderer spriteRenderer = chunk.GetComponent<SpriteRenderer>();
+        updateTimer = 0f;
+        UpdateChunksVisibility();
+    }
 
-            // Check if the sprite renderer is null or disabled
-            if (spriteRenderer == null || !spriteRenderer.enabled)
+    public void RefreshChunks()
+    {
+        chunks.Clear();
+
+        Transform parent = chunkParent != null ? chunkParent.transform : transform;
+        foreach (Transform child in parent)
+        {
+            Renderer renderer = child.GetComponent<Renderer>();
+            if (renderer == null)
             {
                 continue;
             }
 
-            // Calculate the chunk's bounds in world space
-            Bounds bounds = spriteRenderer.bounds;
-
-            // Check if the chunk is visible to the camera
-            bool isVisible = GeometryUtility.TestPlanesAABB(frustumPlanes, bounds);
-
-            // Enable or disable the chunk's game object based on whether it is visible
-            chunk.SetActive(isVisible);
+            chunks.Add(new ChunkEntry
+            {
+                GameObject = child.gameObject,
+                Renderer = renderer
+            });
         }
+    }
+
+    private void UpdateChunksVisibility()
+    {
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main;
+        }
+
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        GeometryUtility.CalculateFrustumPlanes(mainCamera, frustumPlanes);
+
+        for (int i = 0; i < frustumPlanes.Length; i++)
+        {
+            Plane plane = frustumPlanes[i];
+            Vector3 point = plane.ClosestPointOnPlane(mainCamera.transform.position);
+            frustumPlanes[i] = new Plane(plane.normal, point + plane.normal * buffer);
+        }
+
+        for (int i = 0; i < chunks.Count; i++)
+        {
+            ChunkEntry chunk = chunks[i];
+            if (chunk.GameObject == null || chunk.Renderer == null)
+            {
+                continue;
+            }
+
+            bool shouldBeActive =
+                GeometryUtility.TestPlanesAABB(frustumPlanes, chunk.Renderer.bounds);
+
+            if (chunk.GameObject.activeSelf != shouldBeActive)
+            {
+                chunk.GameObject.SetActive(shouldBeActive);
+            }
+        }
+    }
+
+    private void OnValidate()
+    {
+        updateInterval = Mathf.Max(0.02f, updateInterval);
+        buffer = Mathf.Max(0f, buffer);
     }
 }

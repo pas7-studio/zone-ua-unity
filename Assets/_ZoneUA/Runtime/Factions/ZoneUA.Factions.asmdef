@@ -1,0 +1,16 @@
+{
+  "name": "ZoneUA.Factions",
+  "rootNamespace": "ZoneUA.Factions",
+  "references": [
+    "GUID:d1a2db53b1154cc6b3cfc6228e56a4f7"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

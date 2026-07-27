@@ -1,53 +1,124 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class GrassSorting : MonoBehaviour
+public sealed class GrassSorting : MonoBehaviour
 {
-    public List<SpriteRenderer> grassSprites;
-    public float offset = 0.1f;
+    [SerializeField] private List<SpriteRenderer> grassSprites =
+        new List<SpriteRenderer>();
 
-    private float playerHeight;
+    [SerializeField] private float offset = 0.1f;
 
-    private void OnTriggerStay2D(Collider2D other)
+    private Grass[] grassBehaviours;
+    private Collider2D playerCollider;
+    private SpriteRenderer playerRenderer;
+
+    private void Awake()
     {
-        // Only run the sorting logic if the collider that entered the grass collider belongs to the player
-        if (other.CompareTag("Player"))
+        BuildCache();
+    }
+
+    private void OnEnable()
+    {
+        if (grassBehaviours == null || grassBehaviours.Length != grassSprites.Count)
         {
-            // Get the position of the player's collider
-            float playerPosY = other.bounds.center.y;
+            BuildCache();
+        }
+    }
 
-            // Get the height of the player's collider
-            playerHeight = other.bounds.size.y;
+    private void FixedUpdate()
+    {
+        if (playerCollider == null || playerRenderer == null)
+        {
+            return;
+        }
 
-            // Loop through each grass sprite in the list
-            foreach (SpriteRenderer grassSprite in grassSprites)
+        float playerPositionY = playerCollider.bounds.center.y;
+        float playerHeight = playerCollider.bounds.size.y;
+        int behindPlayerOrder = playerRenderer.sortingOrder - 1;
+
+        for (int i = 0; i < grassSprites.Count; i++)
+        {
+            SpriteRenderer grassSprite = grassSprites[i];
+            Grass grass = grassBehaviours[i];
+
+            if (grassSprite == null || grass == null)
             {
-                var grassLogic = grassSprite.GetComponent<Grass>();
+                continue;
+            }
 
-                // Get the bottom position of the grass sprite
-                float grassBottom = grassSprite.bounds.min.y;
+            float grassBottom = grassSprite.bounds.min.y;
+            float distanceToBottom = playerPositionY - (grassBottom + offset);
 
-                // Calculate the distance from the player's bottom to the bottom of the grass
-                float distToBottom = playerPosY - (grassBottom + offset);
-
-                if (distToBottom > playerHeight)
-                {
-                    grassLogic.setDefaultOrder();
-                }
-                else
-                {
-                    grassLogic.setSortOrder(other.GetComponentInChildren<SpriteRenderer>().sortingOrder - 1);
-                }
+            if (distanceToBottom > playerHeight)
+            {
+                grass.SetDefaultOrder();
+            }
+            else
+            {
+                grass.SetSortOrder(behindPlayerOrder);
             }
         }
     }
 
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        CachePlayer(other);
+    }
+
+    private void OnTriggerStay2D(Collider2D other)
+    {
+        if (playerCollider == null)
+        {
+            CachePlayer(other);
+        }
+    }
+
+    private void CachePlayer(Collider2D other)
+    {
+        if (!other.CompareTag("Player"))
+        {
+            return;
+        }
+
+        playerCollider = other;
+        playerRenderer = other.GetComponentInChildren<SpriteRenderer>();
+    }
+
     private void OnTriggerExit2D(Collider2D other)
     {
-        if (other.CompareTag("Player"))
+        if (other != playerCollider)
         {
+            return;
+        }
 
+        RestoreDefaultOrders();
+        playerCollider = null;
+        playerRenderer = null;
+    }
+
+    private void BuildCache()
+    {
+        grassBehaviours = new Grass[grassSprites.Count];
+
+        for (int i = 0; i < grassSprites.Count; i++)
+        {
+            if (grassSprites[i] != null)
+            {
+                grassBehaviours[i] = grassSprites[i].GetComponent<Grass>();
+            }
+        }
+    }
+
+    private void RestoreDefaultOrders()
+    {
+        if (grassBehaviours == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < grassBehaviours.Length; i++)
+        {
+            grassBehaviours[i]?.SetDefaultOrder();
         }
     }
 }

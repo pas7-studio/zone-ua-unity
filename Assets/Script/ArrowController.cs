@@ -1,20 +1,38 @@
 using UnityEngine;
 
-public class ArrowController : MonoBehaviour
+public sealed class ArrowController : MonoBehaviour
 {
+    private Camera mainCamera;
 
-    void Update()
+    private void Awake()
     {
-        Vector3 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        mousePosition.z = 0;
-        transform.position = mousePosition;
+        mainCamera = Camera.main;
     }
 
-    private void FixedUpdate()
+    private void OnEnable()
     {
-        if (Cursor.visible)
+        Cursor.visible = false;
+    }
+
+    private void OnDisable()
+    {
+        Cursor.visible = true;
+    }
+
+    private void Update()
+    {
+        if (mainCamera == null)
         {
-            Cursor.visible = false;
+            mainCamera = Camera.main;
         }
+
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        mousePosition.z = transform.position.z;
+        transform.position = mousePosition;
     }
 }

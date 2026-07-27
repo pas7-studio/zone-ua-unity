@@ -1,25 +1,152 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
-public class GlobalSystem : MonoBehaviour
+[DefaultExecutionOrder(-1000)]
+[DisallowMultipleComponent]
+public sealed class GlobalSystem : MonoBehaviour
 {
-    //Weapon
-    public float weaponXOffset = 0.005f;
-    public float weaponYOffset = 0.035f;
-    
-    //Health
-    public int bloodAmount = 10;
-    public float spawnRadius = 1f;
-    public float bloodImpulsSpeed = 1f;
-    public float bloodImpulseDuration = 1.0f;
-    public GameObject[] bloodPrefabs;
-    public ParticleSystem bloodParticleSystem;
+    public static GlobalSystem Instance { get; private set; }
 
-    public Transform garbadge;
+    [Header("Weapon")]
+    [SerializeField, Min(0f)] private float weaponXOffset = 0.005f;
+    [SerializeField, Min(0f)] private float weaponYOffset = 0.035f;
 
-    public UIAmmoSystem UIAmmoSystem;
+    [Header("Blood")]
+    [SerializeField, Min(0)] private int bloodAmount = 10;
+    [SerializeField, Min(0f)] private float spawnRadius = 1f;
+    [SerializeField, Min(0f)] private float bloodImpulsSpeed = 1f;
+    [SerializeField, Min(0f)] private float bloodImpulseDuration = 1f;
+    [SerializeField] private GameObject[] bloodPrefabs;
+    [SerializeField] private ParticleSystem bloodParticleSystem;
+
+    [Header("Scene References")]
+    [FormerlySerializedAs("garbadge")]
+    [SerializeField] private Transform runtimeContainer;
+
+    [FormerlySerializedAs("UIAmmoSystem")]
+    [SerializeField] private UIAmmoSystem ammoUI;
+
+    private RuntimeObjectPool objectPool;
+
+    public Vector2 WeaponSpawnOffset => new Vector2(weaponXOffset * 10f, weaponYOffset * 10f);
+    public int BloodAmount => bloodAmount;
+    public float BloodSpawnRadius => spawnRadius;
+    public float BloodImpulseSpeed => bloodImpulsSpeed;
+    public float BloodImpulseDuration => bloodImpulseDuration;
+    public ParticleSystem BloodParticleSystem => bloodParticleSystem;
+    public Transform RuntimeContainer => runtimeContainer;
+    public UIAmmoSystem AmmoUI => ammoUI;
+    public RuntimeObjectPool ObjectPool => objectPool;
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Debug.LogError($"Only one {nameof(GlobalSystem)} is allowed in a scene.", this);
+            enabled = false;
+            return;
+        }
+
+        Instance = this;
+        EnsureRuntimeInfrastructure();
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
+
+    public GameObject Spawn(GameObject prefab, Vector3 position, Quaternion rotation, Transform parent = null)
+    {
+        if (prefab == null)
+        {
+            return null;
+        }
+
+        EnsureRuntimeInfrastructure();
+        return objectPool.Spawn(prefab, position, rotation, parent);
+    }
+
+    public T Spawn<T>(T prefab, Vector3 position, Quaternion rotation, Transform parent = null)
+        where T : Component
+    {
+        if (prefab == null)
+        {
+            return null;
+        }
+
+        EnsureRuntimeInfrastructure();
+        return objectPool.Spawn(prefab, position, rotation, parent);
+    }
+
+    public void Release(GameObject instance)
+    {
+        if (instance == null)
+        {
+            return;
+        }
+
+        EnsureRuntimeInfrastructure();
+        if (!objectPool.Release(instance))
+        {
+            Destroy(instance);
+        }
+    }
+
+    public void ReleaseAfter(GameObject instance, float delay)
+    {
+        if (instance == null)
+        {
+            return;
+        }
+
+        EnsureRuntimeInfrastructure();
+        objectPool.ReleaseAfter(instance, delay);
+    }
+
+    public bool TryGetRandomBlood(out GameObject prefab)
+    {
+        prefab = null;
+
+        if (bloodPrefabs == null || bloodPrefabs.Length == 0)
+        {
+            return false;
+        }
+
+        prefab = bloodPrefabs[Random.Range(0, bloodPrefabs.Length)];
+        return prefab != null;
+    }
 
     public GameObject getRandomBlood()
     {
-        return bloodPrefabs.Length > 0 ? bloodPrefabs[Random.Range(0, bloodPrefabs.Length)] : null;
+        TryGetRandomBlood(out GameObject prefab);
+        return prefab;
+    }
+
+    private void EnsureRuntimeInfrastructure()
+    {
+        if (runtimeContainer == null)
+        {
+            GameObject container = new GameObject("Runtime Objects");
+            container.transform.SetParent(transform, false);
+            runtimeContainer = container.transform;
+        }
+
+        objectPool = runtimeContainer.GetComponent<RuntimeObjectPool>();
+        if (objectPool == null)
+        {
+            objectPool = runtimeContainer.gameObject.AddComponent<RuntimeObjectPool>();
+        }
+    }
+
+    private void OnValidate()
+    {
+        bloodAmount = Mathf.Max(0, bloodAmount);
+        spawnRadius = Mathf.Max(0f, spawnRadius);
+        bloodImpulsSpeed = Mathf.Max(0f, bloodImpulsSpeed);
+        bloodImpulseDuration = Mathf.Max(0f, bloodImpulseDuration);
     }
 }
