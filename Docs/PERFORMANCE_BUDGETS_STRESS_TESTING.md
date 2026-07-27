@@ -96,6 +96,8 @@ The JSON output is intended for CI and automated comparison. The CSV output is i
 - active projectile count;
 - generated-object count.
 
+`PerformanceCaptureStatistics` calculates average FPS, p95 main/render thread time and maximum GC/memory values from a complete capture.
+
 The overlay is intended only for Editor and Development builds. Disable it in production builds after the baseline is established.
 
 ## Initial budgets
@@ -131,12 +133,23 @@ Track median and high-percentile behaviour. A single fast frame does not prove t
 
 The pure budget evaluator is covered by EditMode tests and can participate in the existing GameCI job.
 
+Use the report checker after downloading a JSON capture:
+
+```bash
+python scripts/check_performance_capture.py performance-capture.json \
+  --minimum-average-fps 60 \
+  --maximum-p95-main-thread-ms 16.67 \
+  --maximum-p95-render-thread-ms 16.67 \
+  --maximum-gc-bytes 1024 \
+  --maximum-reserved-memory-bytes 2147483648
+```
+
 A future licensed PlayMode performance job should:
 
 1. open a dedicated stress scene;
 2. run the configured scenario;
 3. upload JSON and CSV reports;
-4. compare the result against an approved baseline;
+4. run `check_performance_capture.py` with platform-specific thresholds;
 5. fail only on sustained or statistically meaningful regressions.
 
 Do not fail CI on one noisy frame. Use a stable capture window and target-hardware-specific thresholds.
