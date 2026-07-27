@@ -90,10 +90,13 @@ public sealed class GlobalSystem : MonoBehaviour
         }
 
         EnsureRuntimeInfrastructure();
-        if (!objectPool.Release(instance))
+        if (objectPool.Owns(instance))
         {
-            Destroy(instance);
+            objectPool.Release(instance);
+            return;
         }
+
+        Destroy(instance);
     }
 
     public void ReleaseAfter(GameObject instance, float delay)
@@ -104,7 +107,24 @@ public sealed class GlobalSystem : MonoBehaviour
         }
 
         EnsureRuntimeInfrastructure();
-        objectPool.ReleaseAfter(instance, delay);
+        if (objectPool.Owns(instance))
+        {
+            objectPool.ReleaseAfter(instance, delay);
+            return;
+        }
+
+        Destroy(instance, Mathf.Max(0f, delay));
+    }
+
+    public void Prewarm(GameObject prefab, int count)
+    {
+        if (prefab == null || count <= 0)
+        {
+            return;
+        }
+
+        EnsureRuntimeInfrastructure();
+        objectPool.Prewarm(prefab, count);
     }
 
     public bool TryGetRandomBlood(out GameObject prefab)
