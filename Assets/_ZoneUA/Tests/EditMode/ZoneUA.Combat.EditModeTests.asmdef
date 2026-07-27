@@ -4,7 +4,8 @@
   "references": [
     "ZoneUA.Combat",
     "ZoneUA.Factions",
-    "ZoneUA.Definitions"
+    "ZoneUA.Definitions",
+    "ZoneUA.Infrastructure"
   ],
   "includePlatforms": [
     "Editor"
