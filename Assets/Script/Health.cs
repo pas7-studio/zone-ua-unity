@@ -1,23 +1,36 @@
 using Assets.Script;
+using System;
 using UnityEngine;
+using ZoneUA.Combat;
 
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(Animator))]
 [RequireComponent(typeof(Death))]
-public sealed class Health : MonoBehaviour
+public sealed class Health : MonoBehaviour, IDamageable
 {
-    [Header("Health")]
-    [SerializeField] private int currentHeals = 100;
-    [SerializeField, Min(1)] private int defaultHeals = 100;
-    [SerializeField] private bool isImunable;
-    [SerializeField] private bool isAlive = true;
+    [Header("Health Configuration")]
+    [SerializeField, Min(1), Tooltip("Maximum health for this character.")]
+    private int defaultHeals = 100;
+
+    [SerializeField, Tooltip("Ignores incoming damage while enabled.")]
+    private bool isImunable;
+
+    [Header("Runtime State (Read Only)")]
+    [SerializeField, HideInInspector] private int currentHeals = 100;
+    [SerializeField, HideInInspector] private bool isAlive = true;
 
     private Death death;
     private GlobalSystem globalSystem;
 
+    public event Action<DamageInfo> Damaged;
+    public event Action<int, int> HealthChanged;
+    public event Action<int> Healed;
+    public event Action Died;
+
     public int CurrentHealth => currentHeals;
     public int MaximumHealth => defaultHeals;
     public bool IsAlive => isAlive;
+    public bool IsImmune => isImunable;
 
     private void Awake()
     {
@@ -43,7 +56,10 @@ public sealed class Health : MonoBehaviour
             return;
         }
 
+        int previousHealth = currentHeals;
         currentHeals = Mathf.Clamp(health, 0, defaultHeals);
+        NotifyHealthChanged(previousHealth);
+
         if (currentHeals == 0)
         {
             Die();
@@ -57,25 +73,36 @@ public sealed class Health : MonoBehaviour
             return;
         }
 
+        int previousHealth = currentHeals;
         currentHeals = Mathf.Clamp(currentHeals + amount, 0, defaultHeals);
-    }
+        int restoredAmount = currentHeals - previousHealth;
 
-    public void RestoreFullHealth()
-    {
-        if (isAlive)
-        {
-            currentHeals = defaultHeals;
-        }
-    }
-
-    public void ReceiveDamage(int damageAmount)
-    {
-        if (!isAlive || isImunable || damageAmount <= 0)
+        if (restoredAmount <= 0)
         {
             return;
         }
 
-        currentHeals = Mathf.Max(0, currentHeals - damageAmount);
+        Healed?.Invoke(restoredAmount);
+        NotifyHealthChanged(previousHealth);
+    }
+
+    public void RestoreFullHealth()
+    {
+        RestoreHealth(defaultHeals - currentHeals);
+    }
+
+    public void ReceiveDamage(in DamageInfo damageInfo)
+    {
+        if (!isAlive || isImunable || damageInfo.Amount <= 0)
+        {
+            return;
+        }
+
+        int previousHealth = currentHeals;
+        currentHeals = Mathf.Max(0, currentHeals - damageInfo.Amount);
+
+        Damaged?.Invoke(damageInfo);
+        NotifyHealthChanged(previousHealth);
         SpawnBlood();
 
         if (currentHeals == 0)
@@ -84,15 +111,37 @@ public sealed class Health : MonoBehaviour
         }
     }
 
+    public void ReceiveDamage(int damageAmount)
+    {
+        DamageInfo damageInfo = new DamageInfo(
+            damageAmount,
+            null,
+            null,
+            transform.position,
+            Vector2.zero,
+            DamageType.Environment);
+
+        ReceiveDamage(in damageInfo);
+    }
+
+    private void NotifyHealthChanged(int previousHealth)
+    {
+        if (previousHealth != currentHeals)
+        {
+            HealthChanged?.Invoke(currentHeals, defaultHeals);
+        }
+    }
+
     private void Die()
     {
-        if (death.IsDead)
+        if (death == null || death.IsDead)
         {
             return;
         }
 
         isAlive = false;
         death.Dead();
+        Died?.Invoke();
     }
 
     private void SpawnBlood()
@@ -115,9 +164,13 @@ public sealed class Health : MonoBehaviour
 
             Vector2 spawnPosition =
                 (Vector2)transform.position +
-                Random.insideUnitCircle * globalSystem.BloodSpawnRadius;
+                UnityEngine.Random.insideUnitCircle * globalSystem.BloodSpawnRadius;
 
-            Quaternion rotation = Quaternion.Euler(0f, 0f, Random.Range(-180f, 180f));
+            Quaternion rotation = Quaternion.Euler(
+                0f,
+                0f,
+                UnityEngine.Random.Range(-180f, 180f));
+
             GameObject bloodDrop = globalSystem.Spawn(
                 bloodPrefab,
                 spawnPosition,
@@ -129,7 +182,9 @@ public sealed class Health : MonoBehaviour
                 continue;
             }
 
-            Vector2 forceDirection = Random.insideUnitCircle.normalized * globalSystem.BloodImpulseSpeed;
+            Vector2 forceDirection =
+                UnityEngine.Random.insideUnitCircle.normalized * globalSystem.BloodImpulseSpeed;
+
             body.AddForce(forceDirection, ForceMode2D.Impulse);
             StartCoroutine(Tools.AttenuateVelocity(body, globalSystem.BloodImpulseDuration));
         }
@@ -169,6 +224,7 @@ public sealed class Health : MonoBehaviour
         }
     }
 
+    // Compatibility API retained until scenes, prefabs and UnityEvents are audited.
     public void setHeals(int heals) => SetHealth(heals);
     public void restoreSomeHeals(int amount) => RestoreHealth(amount);
     public void restoreDefaultHeals() => RestoreFullHealth();
