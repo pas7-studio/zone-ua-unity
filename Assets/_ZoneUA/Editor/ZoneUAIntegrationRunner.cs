@@ -14,6 +14,21 @@ namespace ZoneUA.EditorValidation
         private const string ProductionScenePath = ZoneUASceneArchitectureTools.ProductionScenePath;
         private const string InputActionsPath = "Assets/_ZoneUA/Input/ZoneUAInput.inputactions";
 
+        [MenuItem("Zone UA/Tools/Close ShaderGraph Windows", priority = 50)]
+        public static void CloseShaderGraphWindows()
+        {
+            int closed = 0;
+            foreach (EditorWindow window in Resources.FindObjectsOfTypeAll<EditorWindow>())
+            {
+                string typeName = window.GetType().FullName ?? string.Empty;
+                if (!typeName.Contains("MaterialGraphEditWindow", StringComparison.Ordinal)) continue;
+                window.Close();
+                closed++;
+            }
+
+            Debug.Log($"Closed {closed} ShaderGraph editor window(s) to avoid domain-backup serialization errors.");
+        }
+
         [MenuItem("Zone UA/Integration/Build Main Game Scene", priority = 0)]
         public static void BuildMainGameScene()
         {
