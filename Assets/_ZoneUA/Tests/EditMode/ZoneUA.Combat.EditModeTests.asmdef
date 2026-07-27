@@ -11,7 +11,8 @@
     "ZoneUA.Input",
     "ZoneUA.Performance",
     "ZoneUA.SceneManagement",
-    "ZoneUA.Persistence"
+    "ZoneUA.Persistence",
+    "ZoneUA.Inventory"
   ],
   "includePlatforms": [
     "Editor"
