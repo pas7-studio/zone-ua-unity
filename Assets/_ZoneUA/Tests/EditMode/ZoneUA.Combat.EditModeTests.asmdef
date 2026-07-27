@@ -3,7 +3,8 @@
   "rootNamespace": "ZoneUA.Combat.Tests",
   "references": [
     "ZoneUA.Combat",
-    "ZoneUA.Definitions"
+    "ZoneUA.Definitions",
+    "ZoneUA.Factions"
   ],
   "includePlatforms": [
     "Editor"

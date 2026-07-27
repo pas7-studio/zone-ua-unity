@@ -37,12 +37,15 @@ namespace ZoneUA.Factions
                 return true;
             }
 
-            if (faction == other.faction)
-            {
-                return faction.AllowFriendlyFire;
-            }
+            bool sameFaction = faction == other.faction;
+            FactionRelation relation = sameFaction
+                ? FactionRelation.Friendly
+                : faction.GetRelationTo(other.faction);
 
-            return faction.GetRelationTo(other.faction) == FactionRelation.Hostile;
+            return FactionDamagePolicy.CanDamage(
+                sameFaction,
+                faction.AllowFriendlyFire,
+                relation);
         }
     }
 }

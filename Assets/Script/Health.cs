@@ -1,10 +1,7 @@
-using Assets.Script;
 using System;
 using UnityEngine;
 using ZoneUA.Combat;
 
-[RequireComponent(typeof(Rigidbody2D))]
-[RequireComponent(typeof(Animator))]
 [RequireComponent(typeof(Death))]
 public sealed class Health : MonoBehaviour, IDamageable
 {
@@ -15,99 +12,146 @@ public sealed class Health : MonoBehaviour, IDamageable
     [SerializeField, Tooltip("Ignores incoming damage while enabled.")]
     private bool isImunable;
 
+    [SerializeField, Tooltip("Optional per-damage-type resistance profile.")]
+    private DamageResistanceProfile resistanceProfile;
+
+    [SerializeField, Min(0f), Tooltip("Final multiplier applied after resistance.")]
+    private float incomingDamageMultiplier = 1f;
+
+    [Header("Presentation")]
+    [SerializeField, Tooltip("Optional presenter for blood, particles and damage popups.")]
+    private DamageEffectsPresenter damageEffectsPresenter;
+
     [Header("Runtime State (Read Only)")]
     [SerializeField, HideInInspector] private int currentHeals = 100;
-    [SerializeField, HideInInspector] private bool isAlive = true;
 
     private Death death;
-    private GlobalSystem globalSystem;
+    private HealthState state;
+    private bool deathRaised;
 
     public event Action<DamageInfo> Damaged;
+    public event Action<DamageInfo, DamageResolution> DamageResolved;
     public event Action<int, int> HealthChanged;
     public event Action<int> Healed;
     public event Action Died;
 
-    public int CurrentHealth => currentHeals;
-    public int MaximumHealth => defaultHeals;
-    public bool IsAlive => isAlive;
+    public int CurrentHealth => state != null ? state.CurrentHealth : currentHeals;
+    public int MaximumHealth => state != null ? state.MaximumHealth : defaultHeals;
+    public bool IsAlive => state != null ? state.IsAlive : currentHeals > 0;
     public bool IsImmune => isImunable;
 
     private void Awake()
     {
         death = GetComponent<Death>();
-        currentHeals = Mathf.Clamp(currentHeals, 0, defaultHeals);
-        isAlive = currentHeals > 0;
+        damageEffectsPresenter ??= GetComponent<DamageEffectsPresenter>();
+        state = new HealthState(defaultHeals, currentHeals);
+        SyncSerializedState();
     }
 
     private void Start()
     {
-        globalSystem = GlobalSystem.Instance;
-
-        if (!isAlive)
+        if (!state.IsAlive)
         {
-            Die();
+            DieOnce();
+        }
+        else
+        {
+            HealthChanged?.Invoke(state.CurrentHealth, state.MaximumHealth);
         }
     }
 
     public void SetHealth(int health)
     {
-        if (!isAlive)
+        if (deathRaised)
         {
             return;
         }
 
-        int previousHealth = currentHeals;
-        currentHeals = Mathf.Clamp(health, 0, defaultHeals);
-        NotifyHealthChanged(previousHealth);
+        int previous = state.CurrentHealth;
+        state.SetHealth(health);
+        SyncSerializedState();
+        RaiseHealthChanged(previous);
 
-        if (currentHeals == 0)
+        if (!state.IsAlive)
         {
-            Die();
+            DieOnce();
+        }
+    }
+
+    public void SetMaximumHealth(int maximumHealth, bool preserveRatio = false)
+    {
+        if (deathRaised)
+        {
+            return;
+        }
+
+        int previous = state.CurrentHealth;
+        state.SetMaximumHealth(maximumHealth, preserveRatio);
+        defaultHeals = state.MaximumHealth;
+        SyncSerializedState();
+        RaiseHealthChanged(previous, force: true);
+
+        if (!state.IsAlive)
+        {
+            DieOnce();
         }
     }
 
     public void RestoreHealth(int amount)
     {
-        if (!isAlive || amount <= 0)
+        int restored = state.Heal(amount);
+        if (restored <= 0)
         {
             return;
         }
 
-        int previousHealth = currentHeals;
-        currentHeals = Mathf.Clamp(currentHeals + amount, 0, defaultHeals);
-        int restoredAmount = currentHeals - previousHealth;
-
-        if (restoredAmount <= 0)
-        {
-            return;
-        }
-
-        Healed?.Invoke(restoredAmount);
-        NotifyHealthChanged(previousHealth);
+        int previous = state.CurrentHealth - restored;
+        SyncSerializedState();
+        Healed?.Invoke(restored);
+        RaiseHealthChanged(previous);
     }
 
     public void RestoreFullHealth()
     {
-        RestoreHealth(defaultHeals - currentHeals);
+        RestoreHealth(state.MaximumHealth - state.CurrentHealth);
     }
 
     public void ReceiveDamage(in DamageInfo damageInfo)
     {
-        if (!isAlive || isImunable || damageInfo.Amount <= 0)
+        if (!state.IsAlive || isImunable || damageInfo.Amount <= 0f)
         {
             return;
         }
 
-        int previousHealth = currentHeals;
-        currentHeals = Mathf.Max(0, currentHeals - damageInfo.Amount);
+        float resistance = resistanceProfile != null
+            ? resistanceProfile.GetResistance(damageInfo.DamageType)
+            : 0f;
+        DamageResolution resolution = DamageResolver.Resolve(
+            damageInfo.Amount,
+            resistance,
+            incomingDamageMultiplier);
 
-        Damaged?.Invoke(damageInfo);
-        NotifyHealthChanged(previousHealth);
-        SpawnBlood();
-
-        if (currentHeals == 0)
+        DamageResolved?.Invoke(damageInfo, resolution);
+        if (resolution.AppliedAmount <= 0)
         {
-            Die();
+            return;
+        }
+
+        int previous = state.CurrentHealth;
+        int applied = state.ApplyDamage(resolution.AppliedAmount);
+        if (applied <= 0)
+        {
+            return;
+        }
+
+        SyncSerializedState();
+        Damaged?.Invoke(damageInfo);
+        RaiseHealthChanged(previous);
+        damageEffectsPresenter?.Present(in damageInfo, applied);
+
+        if (!state.IsAlive)
+        {
+            DieOnce();
         }
     }
 
@@ -120,107 +164,41 @@ public sealed class Health : MonoBehaviour, IDamageable
             transform.position,
             Vector2.zero,
             DamageType.Environment);
-
         ReceiveDamage(in damageInfo);
     }
 
-    private void NotifyHealthChanged(int previousHealth)
+    private void DieOnce()
     {
-        if (previousHealth != currentHeals)
-        {
-            HealthChanged?.Invoke(currentHeals, defaultHeals);
-        }
-    }
-
-    private void Die()
-    {
-        if (death == null || death.IsDead)
+        if (deathRaised)
         {
             return;
         }
 
-        isAlive = false;
-        death.Dead();
+        deathRaised = true;
+        state.SetHealth(0);
+        SyncSerializedState();
+        death?.Dead();
         Died?.Invoke();
     }
 
-    private void SpawnBlood()
+    private void RaiseHealthChanged(int previousHealth, bool force = false)
     {
-        globalSystem ??= GlobalSystem.Instance;
-
-        if (globalSystem == null)
+        if (force || previousHealth != state.CurrentHealth)
         {
-            return;
-        }
-
-        SpawnBloodEffect();
-
-        for (int i = 0; i < globalSystem.BloodAmount; i++)
-        {
-            if (!globalSystem.TryGetRandomBlood(out GameObject bloodPrefab))
-            {
-                return;
-            }
-
-            Vector2 spawnPosition =
-                (Vector2)transform.position +
-                UnityEngine.Random.insideUnitCircle * globalSystem.BloodSpawnRadius;
-
-            Quaternion rotation = Quaternion.Euler(
-                0f,
-                0f,
-                UnityEngine.Random.Range(-180f, 180f));
-
-            GameObject bloodDrop = globalSystem.Spawn(
-                bloodPrefab,
-                spawnPosition,
-                rotation,
-                globalSystem.RuntimeContainer);
-
-            if (bloodDrop == null || !bloodDrop.TryGetComponent(out Rigidbody2D body))
-            {
-                continue;
-            }
-
-            Vector2 forceDirection =
-                UnityEngine.Random.insideUnitCircle.normalized * globalSystem.BloodImpulseSpeed;
-
-            body.AddForce(forceDirection, ForceMode2D.Impulse);
-            StartCoroutine(Tools.AttenuateVelocity(body, globalSystem.BloodImpulseDuration));
+            HealthChanged?.Invoke(state.CurrentHealth, state.MaximumHealth);
         }
     }
 
-    private void SpawnBloodEffect()
+    private void SyncSerializedState()
     {
-        ParticleSystem bloodEffectPrefab = globalSystem.BloodParticleSystem;
-        if (bloodEffectPrefab == null)
-        {
-            return;
-        }
-
-        ParticleSystem instance = globalSystem.Spawn(
-            bloodEffectPrefab,
-            transform.position,
-            bloodEffectPrefab.transform.rotation,
-            globalSystem.RuntimeContainer);
-
-        if (instance == null)
-        {
-            return;
-        }
-
-        instance.Play();
-
-        ParticleSystem.MainModule main = instance.main;
-        float lifetime = main.duration + main.startLifetime.constantMax;
-        globalSystem.ReleaseAfter(instance.gameObject, Mathf.Max(0.1f, lifetime));
+        currentHeals = state.CurrentHealth;
     }
 
     public void HealthLogic()
     {
-        if (currentHeals <= 0)
+        if (!state.IsAlive)
         {
-            Die();
+            DieOnce();
         }
     }
 
@@ -236,5 +214,6 @@ public sealed class Health : MonoBehaviour, IDamageable
     {
         defaultHeals = Mathf.Max(1, defaultHeals);
         currentHeals = Mathf.Clamp(currentHeals, 0, defaultHeals);
+        incomingDamageMultiplier = Mathf.Max(0f, incomingDamageMultiplier);
     }
 }

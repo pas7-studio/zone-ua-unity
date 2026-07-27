@@ -1,18 +1,31 @@
+using System;
 using UnityEngine;
+using ZoneUA.Combat;
 
-[RequireComponent(typeof(Rigidbody2D))]
-[RequireComponent(typeof(Animator))]
+[DisallowMultipleComponent]
 public sealed class Death : MonoBehaviour
 {
     private static readonly int DeadByBulletHash = Animator.StringToHash("DeadByBullet");
+
+    [Header("Death Behaviour")]
+    [SerializeField] private bool disableBodySimulation = true;
+    [SerializeField] private bool disableColliders = true;
+    [SerializeField, Tooltip("Additional behaviours disabled when death is entered.")]
+    private MonoBehaviour[] behavioursToDisable;
+
+    private readonly DeathState state = new DeathState();
 
     private Animator animator;
     private Rigidbody2D body;
     private CharacterCustomController characterController;
     private WeaponSwitcher weaponSwitcher;
     private NPCController npcController;
+    private WeaponController[] weaponControllers;
+    private Collider2D[] colliders;
 
-    public bool IsDead { get; private set; }
+    public event Action DeathEntered;
+
+    public bool IsDead => state.IsDead;
 
     private void Awake()
     {
@@ -21,23 +34,63 @@ public sealed class Death : MonoBehaviour
         characterController = GetComponent<CharacterCustomController>();
         weaponSwitcher = GetComponent<WeaponSwitcher>();
         npcController = GetComponent<NPCController>();
+        weaponControllers = GetComponentsInChildren<WeaponController>(true);
+        colliders = GetComponentsInChildren<Collider2D>(true);
     }
 
     public void Dead()
     {
-        if (IsDead)
+        if (!state.TryEnter())
         {
             return;
         }
 
-        IsDead = true;
-        body.simulated = false;
-        animator.applyRootMotion = false;
-        animator.SetTrigger(DeadByBulletHash);
+        DisableGameplay();
+        PlayDeathAnimation();
+        DeathEntered?.Invoke();
+    }
+
+    private void DisableGameplay()
+    {
+        if (body != null)
+        {
+            body.linearVelocity = Vector2.zero;
+            body.angularVelocity = 0f;
+            if (disableBodySimulation)
+            {
+                body.simulated = false;
+            }
+        }
+
+        if (disableColliders && colliders != null)
+        {
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                if (colliders[i] != null)
+                {
+                    colliders[i].enabled = false;
+                }
+            }
+        }
 
         if (characterController != null)
         {
             characterController.enabled = false;
+        }
+
+        if (weaponControllers != null)
+        {
+            for (int i = 0; i < weaponControllers.Length; i++)
+            {
+                WeaponController controller = weaponControllers[i];
+                if (controller == null)
+                {
+                    continue;
+                }
+
+                controller.StopFire();
+                controller.enabled = false;
+            }
         }
 
         if (weaponSwitcher != null)
@@ -51,9 +104,28 @@ public sealed class Death : MonoBehaviour
             npcController.PrepareForDeath();
             npcController.enabled = false;
         }
-        else
+
+        if (behavioursToDisable != null)
         {
-            GlobalSystem.Instance?.AmmoUI?.ShowHideUI(false);
+            for (int i = 0; i < behavioursToDisable.Length; i++)
+            {
+                MonoBehaviour behaviour = behavioursToDisable[i];
+                if (behaviour != null && behaviour != this)
+                {
+                    behaviour.enabled = false;
+                }
+            }
         }
+    }
+
+    private void PlayDeathAnimation()
+    {
+        if (animator == null)
+        {
+            return;
+        }
+
+        animator.applyRootMotion = false;
+        animator.SetTrigger(DeadByBulletHash);
     }
 }
