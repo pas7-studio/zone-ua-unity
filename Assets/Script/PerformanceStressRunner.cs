@@ -69,7 +69,7 @@ public sealed class PerformanceStressRunner : MonoBehaviour
         }
 
         monitor?.CaptureSample();
-        monitor?.WriteJson();
+        monitor?.WriteReports();
         CleanupSpawnedObjects();
         routine = null;
     }
