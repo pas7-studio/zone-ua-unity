@@ -30,6 +30,17 @@ jobs:
       - name: Validate Unity repository
         run: python scripts/validate_unity_repo.py
 
+      - name: Check legacy integration usage
+        run: python scripts/check_legacy_usage.py
+
+      - name: Upload repository reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-validation-reports
+          path: Logs/*.json
+          if-no-files-found: warn
+
   unity-editmode-tests:
     name: Unity EditMode tests
     if: ${{ vars.RUN_UNITY_TESTS == 'true' }}
