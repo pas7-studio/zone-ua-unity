@@ -2,7 +2,8 @@
   "name": "ZoneUA.EditorValidation",
   "rootNamespace": "ZoneUA.EditorValidation",
   "references": [
-    "ZoneUA.SceneManagement"
+    "ZoneUA.SceneManagement",
+    "ZoneUA.Persistence"
   ],
   "includePlatforms": [
     "Editor"
