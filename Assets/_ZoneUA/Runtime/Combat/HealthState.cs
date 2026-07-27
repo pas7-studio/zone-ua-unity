@@ -7,7 +7,7 @@ namespace ZoneUA.Combat
         public HealthState(int maximumHealth, int currentHealth)
         {
             MaximumHealth = Math.Max(1, maximumHealth);
-            CurrentHealth = Math.Clamp(currentHealth, 0, MaximumHealth);
+            CurrentHealth = Clamp(currentHealth, 0, MaximumHealth);
         }
 
         public int CurrentHealth { get; private set; }
@@ -23,11 +23,11 @@ namespace ZoneUA.Combat
             if (preserveRatio && previousMaximum > 0)
             {
                 float ratio = previousCurrent / (float)previousMaximum;
-                CurrentHealth = Math.Clamp((int)Math.Round(MaximumHealth * ratio), 0, MaximumHealth);
+                CurrentHealth = Clamp((int)Math.Round(MaximumHealth * ratio), 0, MaximumHealth);
             }
             else
             {
-                CurrentHealth = Math.Clamp(CurrentHealth, 0, MaximumHealth);
+                CurrentHealth = Clamp(CurrentHealth, 0, MaximumHealth);
             }
 
             return CurrentHealth - previousCurrent;
@@ -36,7 +36,7 @@ namespace ZoneUA.Combat
         public int SetHealth(int health)
         {
             int previous = CurrentHealth;
-            CurrentHealth = Math.Clamp(health, 0, MaximumHealth);
+            CurrentHealth = Clamp(health, 0, MaximumHealth);
             return CurrentHealth - previous;
         }
 
@@ -67,6 +67,11 @@ namespace ZoneUA.Combat
         public void ResetToMaximum()
         {
             CurrentHealth = MaximumHealth;
+        }
+
+        private static int Clamp(int value, int minimum, int maximum)
+        {
+            return Math.Min(maximum, Math.Max(minimum, value));
         }
     }
 }
