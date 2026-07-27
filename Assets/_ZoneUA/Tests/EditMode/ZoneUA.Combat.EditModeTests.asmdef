@@ -5,7 +5,8 @@
     "ZoneUA.Combat",
     "ZoneUA.Definitions",
     "ZoneUA.Factions",
-    "ZoneUA.Infrastructure"
+    "ZoneUA.Infrastructure",
+    "ZoneUA.AI"
   ],
   "includePlatforms": [
     "Editor"
