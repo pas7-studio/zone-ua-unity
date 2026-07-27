@@ -31,7 +31,6 @@ namespace ZoneUA.Persistence
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
             Directory.CreateDirectory(rootDirectory);
-
             string payload = JsonUtility.ToJson(data, false);
             var envelope = new SaveEnvelope { payload = payload, checksum = ComputeChecksum(payload) };
             string serialized = JsonUtility.ToJson(envelope, true);
@@ -81,9 +80,11 @@ namespace ZoneUA.Persistence
 
         private static string ComputeChecksum(string value)
         {
-            using SHA256 sha = SHA256.Create();
-            byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(value ?? string.Empty));
-            return Convert.ToHexString(bytes);
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(value ?? string.Empty));
+                return BitConverter.ToString(bytes).Replace("-", string.Empty);
+            }
         }
 
         private static string Sanitize(string slotId)
