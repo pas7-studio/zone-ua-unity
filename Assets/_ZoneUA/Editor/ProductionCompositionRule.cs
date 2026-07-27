@@ -8,12 +8,18 @@ namespace ZoneUA.EditorValidation
     {
         public string Name { get; }
         public string AnchorTypeName { get; }
+        public bool CanAutoAdd { get; }
         public IReadOnlyList<string> RequiredTypeNames { get; }
 
-        public ProductionCompositionRule(string name, string anchorTypeName, params string[] requiredTypeNames)
+        public ProductionCompositionRule(
+            string name,
+            string anchorTypeName,
+            bool canAutoAdd,
+            params string[] requiredTypeNames)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             AnchorTypeName = anchorTypeName ?? throw new ArgumentNullException(nameof(anchorTypeName));
+            CanAutoAdd = canAutoAdd;
             RequiredTypeNames = requiredTypeNames ?? Array.Empty<string>();
         }
     }
@@ -25,34 +31,41 @@ namespace ZoneUA.EditorValidation
             new ProductionCompositionRule(
                 "Player root",
                 "CharacterCustomController",
+                true,
+                "Health",
+                "Death",
                 "PlayerInputRouter",
                 "WeaponSwitcher"),
             new ProductionCompositionRule(
                 "NPC actor",
                 "NPCController",
+                true,
                 "Health",
                 "Death",
                 "ZoneUA.Factions.FactionMember"),
             new ProductionCompositionRule(
                 "Weapon",
                 "WeaponController",
+                true,
                 "Weapon",
                 "ZoneUA.Combat.ProjectileSpawner",
                 "ZoneUA.Combat.ShellEjector",
                 "ZoneUA.Combat.WeaponAudio",
                 "ZoneUA.Combat.WeaponRecoil"),
             new ProductionCompositionRule(
-                "Damageable actor",
+                "Damage presentation",
                 "Health",
-                "Death",
+                false,
                 "DamageEffectsPresenter"),
             new ProductionCompositionRule(
                 "World root",
                 "MapGenerator",
+                true,
                 "ChunkManager"),
             new ProductionCompositionRule(
                 "Ammo HUD",
                 "UIAmmoSystem",
+                false,
                 "WeaponAmmoPresenter")
         };
 
