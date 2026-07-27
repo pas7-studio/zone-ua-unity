@@ -18,6 +18,11 @@ namespace ZoneUA.Combat
 
         public void StartTrigger()
         {
+            if (triggerHeld)
+            {
+                return;
+            }
+
             triggerHeld = true;
             singleConsumed = false;
         }
