@@ -41,7 +41,7 @@ public sealed class ProductionFacility : MonoBehaviour, IPersistentSaveParticipa
     {
         if (recipe == null || cycles <= 0 || !allowedRecipes.Contains(recipe) || inputInventory == null) return false;
         List<InventoryEntry> totalInputs = recipe.BuildInputs()
-            .Select(entry => new InventoryEntry(entry.ItemId, entry.Amount * cycles))
+            .Select(entry => new InventoryEntry(entry.itemId, entry.amount * cycles))
             .ToList();
         if (!inputInventory.TryConsume(totalInputs)) return false;
         queue.Enqueue(recipe.RecipeId, cycles);
@@ -61,11 +61,11 @@ public sealed class ProductionFacility : MonoBehaviour, IPersistentSaveParticipa
         InventoryComponent destination = outputInventory != null ? outputInventory : inputInventory;
         if (destination == null) return;
         List<InventoryEntry> outputs = recipe.BuildOutputs();
-        int outputCount = outputs.Sum(entry => entry.Amount);
+        int outputCount = outputs.Sum(entry => entry.amount);
         if (destination.Capacity > 0 && destination.TotalItemCount + outputCount > destination.Capacity) return;
 
         if (!queue.TryAdvance(deltaTime, recipe.DurationSeconds, out _)) return;
-        foreach (InventoryEntry output in outputs) destination.Add(output.ItemId, output.Amount);
+        foreach (InventoryEntry output in outputs) destination.Add(output.itemId, output.amount);
     }
 
     public string CaptureState()
