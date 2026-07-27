@@ -62,28 +62,19 @@ public sealed class Health : MonoBehaviour, IDamageable
 
     public void SetHealth(int health)
     {
-        if (deathRaised)
-        {
-            return;
-        }
+        if (deathRaised) return;
 
         int previous = state.CurrentHealth;
         state.SetHealth(health);
         SyncSerializedState();
         RaiseHealthChanged(previous);
 
-        if (!state.IsAlive)
-        {
-            DieOnce();
-        }
+        if (!state.IsAlive) DieOnce();
     }
 
     public void SetMaximumHealth(int maximumHealth, bool preserveRatio = false)
     {
-        if (deathRaised)
-        {
-            return;
-        }
+        if (deathRaised) return;
 
         int previous = state.CurrentHealth;
         state.SetMaximumHealth(maximumHealth, preserveRatio);
@@ -91,19 +82,13 @@ public sealed class Health : MonoBehaviour, IDamageable
         SyncSerializedState();
         RaiseHealthChanged(previous, force: true);
 
-        if (!state.IsAlive)
-        {
-            DieOnce();
-        }
+        if (!state.IsAlive) DieOnce();
     }
 
     public void RestoreHealth(int amount)
     {
         int restored = state.Heal(amount);
-        if (restored <= 0)
-        {
-            return;
-        }
+        if (restored <= 0) return;
 
         int previous = state.CurrentHealth - restored;
         SyncSerializedState();
@@ -111,17 +96,11 @@ public sealed class Health : MonoBehaviour, IDamageable
         RaiseHealthChanged(previous);
     }
 
-    public void RestoreFullHealth()
-    {
-        RestoreHealth(state.MaximumHealth - state.CurrentHealth);
-    }
+    public void RestoreFullHealth() => RestoreHealth(state.MaximumHealth - state.CurrentHealth);
 
     public void ReceiveDamage(in DamageInfo damageInfo)
     {
-        if (!state.IsAlive || isImunable || damageInfo.Amount <= 0f)
-        {
-            return;
-        }
+        if (!state.IsAlive || isImunable || damageInfo.Amount <= 0f) return;
 
         float resistance = resistanceProfile != null
             ? resistanceProfile.GetResistance(damageInfo.Type)
@@ -132,29 +111,21 @@ public sealed class Health : MonoBehaviour, IDamageable
             incomingDamageMultiplier);
 
         DamageResolved?.Invoke(damageInfo, resolution);
-        if (resolution.AppliedAmount <= 0)
-        {
-            return;
-        }
+        if (resolution.AppliedAmount <= 0) return;
 
         int previous = state.CurrentHealth;
         int applied = state.ApplyDamage(resolution.AppliedAmount);
-        if (applied <= 0)
-        {
-            return;
-        }
+        if (applied <= 0) return;
 
         SyncSerializedState();
         Damaged?.Invoke(damageInfo);
         RaiseHealthChanged(previous);
         damageEffectsPresenter?.Present(in damageInfo, applied);
 
-        if (!state.IsAlive)
-        {
-            DieOnce();
-        }
+        if (!state.IsAlive) DieOnce();
     }
 
+    [Obsolete("Use ReceiveDamage(in DamageInfo) so source, type, position and impulse are preserved.")]
     public void ReceiveDamage(int damageAmount)
     {
         DamageInfo damageInfo = new DamageInfo(
@@ -169,10 +140,7 @@ public sealed class Health : MonoBehaviour, IDamageable
 
     private void DieOnce()
     {
-        if (deathRaised)
-        {
-            return;
-        }
+        if (deathRaised) return;
 
         deathRaised = true;
         state.SetHealth(0);
@@ -189,25 +157,31 @@ public sealed class Health : MonoBehaviour, IDamageable
         }
     }
 
-    private void SyncSerializedState()
-    {
-        currentHeals = state.CurrentHealth;
-    }
+    private void SyncSerializedState() => currentHeals = state.CurrentHealth;
 
+    [Obsolete("Health state is evaluated immediately. Subscribe to Died or use IsAlive instead.")]
     public void HealthLogic()
     {
-        if (!state.IsAlive)
-        {
-            DieOnce();
-        }
+        if (!state.IsAlive) DieOnce();
     }
 
-    // Compatibility API retained until scenes, prefabs and UnityEvents are audited.
+    // Compatibility API retained only for serialized UnityEvents during prefab migration.
+    [Obsolete("Use SetHealth(int).")]
     public void setHeals(int heals) => SetHealth(heals);
+
+    [Obsolete("Use RestoreHealth(int).")]
     public void restoreSomeHeals(int amount) => RestoreHealth(amount);
+
+    [Obsolete("Use RestoreFullHealth().")]
     public void restoreDefaultHeals() => RestoreFullHealth();
+
+    [Obsolete("Use CurrentHealth.")]
     public int getHeals() => CurrentHealth;
+
+    [Obsolete("Use ReceiveDamage(in DamageInfo).")]
     public void receiveDamage(int damageAmount) => ReceiveDamage(damageAmount);
+
+    [Obsolete("Use IsAlive.")]
     public bool getIsAlive() => IsAlive;
 
     private void OnValidate()
