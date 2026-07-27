@@ -43,7 +43,7 @@ public sealed class ProductionFacility : MonoBehaviour, IPersistentSaveParticipa
         List<InventoryEntry> totalInputs = recipe.BuildInputs()
             .Select(entry => new InventoryEntry(entry.ItemId, entry.Amount * cycles))
             .ToList();
-        if (!inputInventory.ConsumeAtomic(totalInputs)) return false;
+        if (!inputInventory.TryConsume(totalInputs)) return false;
         queue.Enqueue(recipe.RecipeId, cycles);
         return true;
     }
