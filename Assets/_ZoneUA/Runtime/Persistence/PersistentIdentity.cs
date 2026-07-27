@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace ZoneUA.Persistence
 {
@@ -37,6 +36,13 @@ namespace ZoneUA.Persistence
         {
             if (!runtimeSpawned || string.IsNullOrWhiteSpace(objectId))
                 AssignRuntimeId(Guid.NewGuid().ToString("N"), sourcePrefabId);
+        }
+
+        public void MarkDestroyed()
+        {
+            if (!HasValidId) throw new InvalidOperationException("A persistent object must have a stable ID before it can be tombstoned.");
+            PersistentTombstoneRegistry.MarkDestroyed(objectId);
+            gameObject.SetActive(false);
         }
 
         public IReadOnlyList<IPersistentSaveParticipant> GetParticipants()
