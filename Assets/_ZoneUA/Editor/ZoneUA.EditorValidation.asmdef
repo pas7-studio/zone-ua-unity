@@ -4,7 +4,8 @@
   "references": [
     "ZoneUA.SceneManagement",
     "ZoneUA.Persistence",
-    "ZoneUA.Inventory"
+    "ZoneUA.Inventory",
+    "ZoneUA.Economy"
   ],
   "includePlatforms": [
     "Editor"
