@@ -1,11 +1,33 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using ZoneUA.Infrastructure;
 
 [DisallowMultipleComponent]
 public sealed class RuntimeObjectPool : MonoBehaviour
 {
-    private readonly Dictionary<GameObject, Queue<GameObject>> availableByPrefab = new();
-    private readonly Dictionary<GameObject, GameObject> prefabByInstance = new();
+    [SerializeField, Min(1), Tooltip("Maximum inactive instances retained for each prefab.")]
+    private int maxInactivePerPrefab = 64;
+
+    private sealed class Entry
+    {
+        public GameObject Prefab;
+        public GameObject Instance;
+        public Vector3 PrefabLocalScale;
+        public readonly PoolLeaseState Lease = new PoolLeaseState();
+        public Rigidbody2D[] Bodies2D;
+        public Rigidbody[] Bodies3D;
+        public TrailRenderer[] Trails;
+        public ParticleSystem[] Particles;
+        public IPoolable[] Callbacks;
+    }
+
+    private readonly Dictionary<GameObject, Queue<Entry>> availableByPrefab = new();
+    private readonly Dictionary<GameObject, Entry> entryByInstance = new();
+    private readonly Dictionary<GameObject, Coroutine> delayedReleaseByInstance = new();
+
+    public int TrackedInstanceCount => entryByInstance.Count;
+    public int ScheduledReleaseCount => delayedReleaseByInstance.Count;
 
     public GameObject Spawn(GameObject prefab, Vector3 position, Quaternion rotation, Transform parent = null)
     {
@@ -14,30 +36,39 @@ public sealed class RuntimeObjectPool : MonoBehaviour
             return null;
         }
 
-        if (!availableByPrefab.TryGetValue(prefab, out Queue<GameObject> available))
+        Queue<Entry> available = GetOrCreateQueue(prefab);
+        Entry entry = null;
+
+        while (available.Count > 0 && entry == null)
         {
-            available = new Queue<GameObject>();
-            availableByPrefab.Add(prefab, available);
+            Entry candidate = available.Dequeue();
+            if (candidate?.Instance == null)
+            {
+                continue;
+            }
+
+            entry = candidate;
         }
 
-        GameObject instance = null;
-        while (available.Count > 0 && instance == null)
+        if (entry == null)
         {
-            instance = available.Dequeue();
+            GameObject instance = Instantiate(prefab);
+            entry = CreateEntry(prefab, instance);
+            entryByInstance.Add(instance, entry);
         }
 
-        if (instance == null)
-        {
-            instance = Instantiate(prefab);
-            prefabByInstance[instance] = prefab;
-        }
+        CancelScheduledRelease(entry.Instance);
+        entry.Lease.Acquire();
 
-        Transform instanceTransform = instance.transform;
+        Transform instanceTransform = entry.Instance.transform;
         instanceTransform.SetParent(parent, false);
         instanceTransform.SetPositionAndRotation(position, rotation);
-        ResetPhysics(instance);
-        instance.SetActive(true);
-        return instance;
+        instanceTransform.localScale = entry.PrefabLocalScale;
+
+        ResetRuntimeState(entry);
+        entry.Instance.SetActive(true);
+        InvokeSpawned(entry);
+        return entry.Instance;
     }
 
     public T Spawn<T>(T prefab, Vector3 position, Quaternion rotation, Transform parent = null)
@@ -47,84 +78,262 @@ public sealed class RuntimeObjectPool : MonoBehaviour
         return instance != null ? instance.GetComponent<T>() : null;
     }
 
+    public bool Owns(GameObject instance)
+    {
+        return instance != null && entryByInstance.ContainsKey(instance);
+    }
+
+    public bool IsLeased(GameObject instance)
+    {
+        return instance != null &&
+               entryByInstance.TryGetValue(instance, out Entry entry) &&
+               entry.Lease.IsLeased;
+    }
+
+    public int GetLeaseGeneration(GameObject instance)
+    {
+        return instance != null && entryByInstance.TryGetValue(instance, out Entry entry)
+            ? entry.Lease.Generation
+            : 0;
+    }
+
     public bool Release(GameObject instance)
     {
-        if (instance == null || !prefabByInstance.TryGetValue(instance, out GameObject prefab))
+        if (instance == null || !entryByInstance.TryGetValue(instance, out Entry entry))
         {
             return false;
         }
 
-        ResetPhysics(instance);
-        instance.SetActive(false);
-        instance.transform.SetParent(transform, false);
-
-        if (!availableByPrefab.TryGetValue(prefab, out Queue<GameObject> available))
+        CancelScheduledRelease(instance);
+        if (!entry.Lease.TryRelease())
         {
-            available = new Queue<GameObject>();
-            availableByPrefab.Add(prefab, available);
+            return false;
         }
 
-        available.Enqueue(instance);
+        ReturnEntry(entry);
         return true;
     }
 
-    public void ReleaseAfter(GameObject instance, float delay)
+    public bool ReleaseAfter(GameObject instance, float delay)
     {
-        if (instance == null)
+        if (instance == null ||
+            !entryByInstance.TryGetValue(instance, out Entry entry) ||
+            !entry.Lease.IsLeased)
+        {
+            return false;
+        }
+
+        CancelScheduledRelease(instance);
+        int expectedGeneration = entry.Lease.Generation;
+        delayedReleaseByInstance[instance] = StartCoroutine(
+            ReleaseAfterRoutine(entry, expectedGeneration, Mathf.Max(0f, delay)));
+        return true;
+    }
+
+    public int GetInactiveCount(GameObject prefab)
+    {
+        return prefab != null && availableByPrefab.TryGetValue(prefab, out Queue<Entry> queue)
+            ? queue.Count
+            : 0;
+    }
+
+    public void Prewarm(GameObject prefab, int count)
+    {
+        if (prefab == null || count <= 0)
         {
             return;
         }
 
-        StartCoroutine(ReleaseAfterRoutine(instance, Mathf.Max(0f, delay)));
+        Queue<Entry> available = GetOrCreateQueue(prefab);
+        int target = Mathf.Min(maxInactivePerPrefab, available.Count + count);
+
+        while (available.Count < target)
+        {
+            GameObject instance = Instantiate(prefab, transform);
+            Entry entry = CreateEntry(prefab, instance);
+            entryByInstance.Add(instance, entry);
+            ResetRuntimeState(entry);
+            instance.SetActive(false);
+            available.Enqueue(entry);
+        }
     }
 
     public void Clear()
     {
-        foreach (KeyValuePair<GameObject, GameObject> entry in prefabByInstance)
+        foreach (Coroutine routine in delayedReleaseByInstance.Values)
         {
-            if (entry.Key != null)
+            if (routine != null)
             {
-                Destroy(entry.Key);
+                StopCoroutine(routine);
+            }
+        }
+
+        delayedReleaseByInstance.Clear();
+
+        foreach (Entry entry in entryByInstance.Values)
+        {
+            if (entry?.Instance != null)
+            {
+                Destroy(entry.Instance);
             }
         }
 
         availableByPrefab.Clear();
-        prefabByInstance.Clear();
+        entryByInstance.Clear();
     }
 
-    private System.Collections.IEnumerator ReleaseAfterRoutine(GameObject instance, float delay)
+    private IEnumerator ReleaseAfterRoutine(Entry entry, int expectedGeneration, float delay)
     {
         if (delay > 0f)
         {
             yield return new WaitForSeconds(delay);
         }
 
-        Release(instance);
+        GameObject instance = entry.Instance;
+        if (instance != null)
+        {
+            delayedReleaseByInstance.Remove(instance);
+        }
+
+        if (instance == null || !entry.Lease.TryRelease(expectedGeneration))
+        {
+            yield break;
+        }
+
+        ReturnEntry(entry);
     }
 
-    private static void ResetPhysics(GameObject instance)
+    private void ReturnEntry(Entry entry)
     {
-        if (instance.TryGetComponent(out Rigidbody2D body2D))
+        GameObject instance = entry.Instance;
+        if (instance == null)
         {
-            body2D.velocity = Vector2.zero;
-            body2D.angularVelocity = 0f;
+            return;
         }
 
-        if (instance.TryGetComponent(out Rigidbody body3D))
+        InvokeReleased(entry);
+        ResetRuntimeState(entry);
+        instance.SetActive(false);
+        instance.transform.SetParent(transform, false);
+
+        Queue<Entry> available = GetOrCreateQueue(entry.Prefab);
+        if (available.Count >= maxInactivePerPrefab)
         {
-            body3D.velocity = Vector3.zero;
-            body3D.angularVelocity = Vector3.zero;
+            entryByInstance.Remove(instance);
+            Destroy(instance);
+            return;
         }
 
-        if (instance.TryGetComponent(out TrailRenderer trail))
+        available.Enqueue(entry);
+    }
+
+    private void CancelScheduledRelease(GameObject instance)
+    {
+        if (instance == null || !delayedReleaseByInstance.TryGetValue(instance, out Coroutine routine))
         {
-            trail.Clear();
+            return;
         }
 
-        ParticleSystem[] particles = instance.GetComponentsInChildren<ParticleSystem>(true);
-        for (int i = 0; i < particles.Length; i++)
+        if (routine != null)
         {
-            particles[i].Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            StopCoroutine(routine);
         }
+
+        delayedReleaseByInstance.Remove(instance);
+    }
+
+    private Queue<Entry> GetOrCreateQueue(GameObject prefab)
+    {
+        if (!availableByPrefab.TryGetValue(prefab, out Queue<Entry> queue))
+        {
+            queue = new Queue<Entry>();
+            availableByPrefab.Add(prefab, queue);
+        }
+
+        return queue;
+    }
+
+    private static Entry CreateEntry(GameObject prefab, GameObject instance)
+    {
+        MonoBehaviour[] behaviours = instance.GetComponentsInChildren<MonoBehaviour>(true);
+        var callbacks = new List<IPoolable>(behaviours.Length);
+        for (int i = 0; i < behaviours.Length; i++)
+        {
+            if (behaviours[i] is IPoolable poolable)
+            {
+                callbacks.Add(poolable);
+            }
+        }
+
+        return new Entry
+        {
+            Prefab = prefab,
+            Instance = instance,
+            PrefabLocalScale = prefab.transform.localScale,
+            Bodies2D = instance.GetComponentsInChildren<Rigidbody2D>(true),
+            Bodies3D = instance.GetComponentsInChildren<Rigidbody>(true),
+            Trails = instance.GetComponentsInChildren<TrailRenderer>(true),
+            Particles = instance.GetComponentsInChildren<ParticleSystem>(true),
+            Callbacks = callbacks.ToArray()
+        };
+    }
+
+    private static void ResetRuntimeState(Entry entry)
+    {
+        for (int i = 0; i < entry.Bodies2D.Length; i++)
+        {
+            Rigidbody2D body = entry.Bodies2D[i];
+            if (body == null) continue;
+            body.linearVelocity = Vector2.zero;
+            body.angularVelocity = 0f;
+        }
+
+        for (int i = 0; i < entry.Bodies3D.Length; i++)
+        {
+            Rigidbody body = entry.Bodies3D[i];
+            if (body == null) continue;
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+        }
+
+        for (int i = 0; i < entry.Trails.Length; i++)
+        {
+            entry.Trails[i]?.Clear();
+        }
+
+        for (int i = 0; i < entry.Particles.Length; i++)
+        {
+            ParticleSystem particle = entry.Particles[i];
+            if (particle != null)
+            {
+                particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+        }
+    }
+
+    private static void InvokeSpawned(Entry entry)
+    {
+        for (int i = 0; i < entry.Callbacks.Length; i++)
+        {
+            entry.Callbacks[i]?.OnPoolSpawned();
+        }
+    }
+
+    private static void InvokeReleased(Entry entry)
+    {
+        for (int i = 0; i < entry.Callbacks.Length; i++)
+        {
+            entry.Callbacks[i]?.OnPoolReleased();
+        }
+    }
+
+    private void OnDestroy()
+    {
+        Clear();
+    }
+
+    private void OnValidate()
+    {
+        maxInactivePerPrefab = Mathf.Max(1, maxInactivePerPrefab);
     }
 }
