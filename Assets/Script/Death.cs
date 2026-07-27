@@ -50,11 +50,6 @@ public sealed class Death : MonoBehaviour
         DeathEntered?.Invoke();
     }
 
-    public bool TryEnterDeath()
-    {
-        return state.TryEnter();
-    }
-
     private void DisableGameplay()
     {
         if (body != null)
