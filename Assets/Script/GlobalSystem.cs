@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -35,8 +36,13 @@ public sealed class GlobalSystem : MonoBehaviour
     public float BloodImpulseDuration => bloodImpulseDuration;
     public ParticleSystem BloodParticleSystem => bloodParticleSystem;
     public Transform RuntimeContainer => runtimeContainer;
+
+    [Obsolete("Gameplay code must use WeaponAmmoPresenter events instead of accessing UI through GlobalSystem.")]
     public UIAmmoSystem AmmoUI => ammoUI;
+
     public RuntimeObjectPool ObjectPool => objectPool;
+    public int TrackedInstanceCount => objectPool != null ? objectPool.TrackedInstanceCount : 0;
+    public int ScheduledReleaseCount => objectPool != null ? objectPool.ScheduledReleaseCount : 0;
 
     private void Awake()
     {
@@ -53,19 +59,12 @@ public sealed class GlobalSystem : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        if (Instance == this) Instance = null;
     }
 
     public GameObject Spawn(GameObject prefab, Vector3 position, Quaternion rotation, Transform parent = null)
     {
-        if (prefab == null)
-        {
-            return null;
-        }
-
+        if (prefab == null) return null;
         EnsureRuntimeInfrastructure();
         return objectPool.Spawn(prefab, position, rotation, parent);
     }
@@ -73,21 +72,14 @@ public sealed class GlobalSystem : MonoBehaviour
     public T Spawn<T>(T prefab, Vector3 position, Quaternion rotation, Transform parent = null)
         where T : Component
     {
-        if (prefab == null)
-        {
-            return null;
-        }
-
+        if (prefab == null) return null;
         EnsureRuntimeInfrastructure();
         return objectPool.Spawn(prefab, position, rotation, parent);
     }
 
     public void Release(GameObject instance)
     {
-        if (instance == null)
-        {
-            return;
-        }
+        if (instance == null) return;
 
         EnsureRuntimeInfrastructure();
         if (objectPool.Owns(instance))
@@ -101,10 +93,7 @@ public sealed class GlobalSystem : MonoBehaviour
 
     public void ReleaseAfter(GameObject instance, float delay)
     {
-        if (instance == null)
-        {
-            return;
-        }
+        if (instance == null) return;
 
         EnsureRuntimeInfrastructure();
         if (objectPool.Owns(instance))
@@ -118,28 +107,27 @@ public sealed class GlobalSystem : MonoBehaviour
 
     public void Prewarm(GameObject prefab, int count)
     {
-        if (prefab == null || count <= 0)
-        {
-            return;
-        }
-
+        if (prefab == null || count <= 0) return;
         EnsureRuntimeInfrastructure();
         objectPool.Prewarm(prefab, count);
+    }
+
+    public bool Owns(GameObject instance)
+    {
+        EnsureRuntimeInfrastructure();
+        return objectPool.Owns(instance);
     }
 
     public bool TryGetRandomBlood(out GameObject prefab)
     {
         prefab = null;
-
-        if (bloodPrefabs == null || bloodPrefabs.Length == 0)
-        {
-            return false;
-        }
+        if (bloodPrefabs == null || bloodPrefabs.Length == 0) return false;
 
         prefab = bloodPrefabs[Random.Range(0, bloodPrefabs.Length)];
         return prefab != null;
     }
 
+    [Obsolete("Use TryGetRandomBlood(out GameObject) and handle an empty configuration explicitly.")]
     public GameObject getRandomBlood()
     {
         TryGetRandomBlood(out GameObject prefab);
