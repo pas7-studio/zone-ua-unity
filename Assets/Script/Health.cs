@@ -124,7 +124,7 @@ public sealed class Health : MonoBehaviour, IDamageable
         }
 
         float resistance = resistanceProfile != null
-            ? resistanceProfile.GetResistance(damageInfo.Type)
+            ? resistanceProfile.GetResistance(damageInfo.DamageType)
             : 0f;
         DamageResolution resolution = DamageResolver.Resolve(
             damageInfo.Amount,

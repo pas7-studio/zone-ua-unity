@@ -23,7 +23,7 @@ public sealed class DamageEffectsPresenter : MonoBehaviour
             return;
         }
 
-        Vector3 origin = damageInfo.HitPoint == Vector3.zero ? transform.position : damageInfo.HitPoint;
+        Vector3 origin = damageInfo.HitPoint == Vector2.zero ? transform.position : damageInfo.HitPoint;
         SpawnParticle(origin);
         SpawnDecals(origin, damageInfo.HitDirection);
         SpawnPopup(origin);
