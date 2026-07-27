@@ -2,7 +2,8 @@
   "name": "ZoneUA.Combat.EditModeTests",
   "rootNamespace": "ZoneUA.Combat.Tests",
   "references": [
-    "ZoneUA.Combat"
+    "ZoneUA.Combat",
+    "ZoneUA.Definitions"
   ],
   "includePlatforms": [
     "Editor"
