@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -11,11 +10,11 @@ namespace ZoneUA.EditorValidation
 {
     public static class ZoneUAInventoryContentValidator
     {
-        [MenuItem("Zone UA/Validation/Validate Inventory and Construction", priority = 45)]
+        [MenuItem("Zone UA/Validation/Validate Inventory and Loot", priority = 45)]
         public static void ValidateMenu()
         {
             bool valid = Validate(logResults: true);
-            EditorUtility.DisplayDialog("Inventory and construction validation", valid ? "Validation passed." : "Validation failed. See Console.", "OK");
+            EditorUtility.DisplayDialog("Inventory and loot validation", valid ? "Validation passed." : "Validation failed. See Console.", "OK");
         }
 
         public static bool Validate(bool logResults)
@@ -23,14 +22,13 @@ namespace ZoneUA.EditorValidation
             var errors = new List<string>();
             var warnings = new List<string>();
             ValidateItems(errors, warnings);
-            ValidateConstruction(errors, warnings);
             ValidateLoadedObjects(errors, warnings);
 
             if (logResults)
             {
                 foreach (string warning in warnings) Debug.LogWarning("[Inventory Validation] " + warning);
                 foreach (string error in errors) Debug.LogError("[Inventory Validation] " + error);
-                if (errors.Count == 0) Debug.Log($"Inventory validation passed with {warnings.Count} warning(s).");
+                if (errors.Count == 0) Debug.Log($"Inventory and loot validation passed with {warnings.Count} warning(s).");
             }
             return errors.Count == 0;
         }
@@ -47,23 +45,7 @@ namespace ZoneUA.EditorValidation
                 else if (seen.TryGetValue(item.ItemId, out string other)) errors.Add($"Duplicate item ID '{item.ItemId}': {other} and {path}");
                 else seen[item.ItemId] = path;
                 if (item.WorldPrefab == null) warnings.Add($"Item '{item.ItemId}' has no world prefab: {path}");
-            }
-        }
-
-        private static void ValidateConstruction(ICollection<string> errors, ICollection<string> warnings)
-        {
-            var seen = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (string guid in AssetDatabase.FindAssets("t:ConstructionDefinition"))
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                ConstructionDefinition definition = AssetDatabase.LoadAssetAtPath<ConstructionDefinition>(path);
-                if (definition == null) continue;
-                if (string.IsNullOrWhiteSpace(definition.ConstructionId)) errors.Add($"ConstructionDefinition has an empty ID: {path}");
-                else if (seen.TryGetValue(definition.ConstructionId, out string other)) errors.Add($"Duplicate construction ID '{definition.ConstructionId}': {other} and {path}");
-                else seen[definition.ConstructionId] = path;
-                if (definition.CompletedPrefab == null) warnings.Add($"Construction '{definition.ConstructionId}' has no completed prefab: {path}");
-                foreach (ConstructionCost cost in definition.Costs)
-                    if (cost == null || cost.item == null || cost.amount <= 0) errors.Add($"Construction '{definition.ConstructionId}' has an invalid cost entry: {path}");
+                if (item.BaseValue == 0) warnings.Add($"Item '{item.ItemId}' has zero base loot value: {path}");
             }
         }
 
@@ -71,7 +53,10 @@ namespace ZoneUA.EditorValidation
         {
             ValidateTypeComposition("InventoryComponent", "InventorySaveParticipant", warnings);
             ValidateTypeComposition("WorldItemPickup", "PersistentIdentity", errors);
-            ValidateTypeComposition("ConstructionSite", "PersistentIdentity", errors);
+            ValidateTypeComposition("LootContainer", "PersistentIdentity", errors);
+            ValidateTypeComposition("LootContainer", "InventoryComponent", errors);
+            ValidateTypeComposition("LootContainer", "InventorySaveParticipant", errors);
+            ValidateTypeComposition("CorpseLootContainer", "LootContainer", errors);
         }
 
         private static void ValidateTypeComposition(string ownerTypeName, string requiredTypeName, ICollection<string> issues)
@@ -94,7 +79,7 @@ namespace ZoneUA.EditorValidation
         public void OnPreprocessBuild(BuildReport report)
         {
             if (!ZoneUAInventoryContentValidator.Validate(logResults: true))
-                throw new BuildFailedException("Inventory or construction content validation failed.");
+                throw new BuildFailedException("Inventory or loot content validation failed.");
         }
     }
 }
