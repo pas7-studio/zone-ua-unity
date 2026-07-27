@@ -42,12 +42,10 @@ public sealed class RuntimeObjectPool : MonoBehaviour
         while (available.Count > 0 && entry == null)
         {
             Entry candidate = available.Dequeue();
-            if (candidate?.Instance == null)
+            if (candidate?.Instance != null)
             {
-                continue;
+                entry = candidate;
             }
-
-            entry = candidate;
         }
 
         if (entry == null)
@@ -78,24 +76,18 @@ public sealed class RuntimeObjectPool : MonoBehaviour
         return instance != null ? instance.GetComponent<T>() : null;
     }
 
-    public bool Owns(GameObject instance)
-    {
-        return instance != null && entryByInstance.ContainsKey(instance);
-    }
+    public bool Owns(GameObject instance) =>
+        instance != null && entryByInstance.ContainsKey(instance);
 
-    public bool IsLeased(GameObject instance)
-    {
-        return instance != null &&
-               entryByInstance.TryGetValue(instance, out Entry entry) &&
-               entry.Lease.IsLeased;
-    }
+    public bool IsLeased(GameObject instance) =>
+        instance != null &&
+        entryByInstance.TryGetValue(instance, out Entry entry) &&
+        entry.Lease.IsLeased;
 
-    public int GetLeaseGeneration(GameObject instance)
-    {
-        return instance != null && entryByInstance.TryGetValue(instance, out Entry entry)
+    public int GetLeaseGeneration(GameObject instance) =>
+        instance != null && entryByInstance.TryGetValue(instance, out Entry entry)
             ? entry.Lease.Generation
             : 0;
-    }
 
     public bool Release(GameObject instance)
     {
@@ -124,18 +116,22 @@ public sealed class RuntimeObjectPool : MonoBehaviour
         }
 
         CancelScheduledRelease(instance);
+        float safeDelay = Mathf.Max(0f, delay);
+        if (safeDelay <= 0f)
+        {
+            return Release(instance);
+        }
+
         int expectedGeneration = entry.Lease.Generation;
         delayedReleaseByInstance[instance] = StartCoroutine(
-            ReleaseAfterRoutine(entry, expectedGeneration, Mathf.Max(0f, delay)));
+            ReleaseAfterRoutine(entry, expectedGeneration, safeDelay));
         return true;
     }
 
-    public int GetInactiveCount(GameObject prefab)
-    {
-        return prefab != null && availableByPrefab.TryGetValue(prefab, out Queue<Entry> queue)
+    public int GetInactiveCount(GameObject prefab) =>
+        prefab != null && availableByPrefab.TryGetValue(prefab, out Queue<Entry> queue)
             ? queue.Count
             : 0;
-    }
 
     public void Prewarm(GameObject prefab, int count)
     {
@@ -184,10 +180,7 @@ public sealed class RuntimeObjectPool : MonoBehaviour
 
     private IEnumerator ReleaseAfterRoutine(Entry entry, int expectedGeneration, float delay)
     {
-        if (delay > 0f)
-        {
-            yield return new WaitForSeconds(delay);
-        }
+        yield return new WaitForSeconds(delay);
 
         GameObject instance = entry.Instance;
         if (instance != null)
