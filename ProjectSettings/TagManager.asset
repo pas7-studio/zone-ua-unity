@@ -17,11 +17,11 @@ TagManager:
   - UI
   - 
   - End
-  - 
-  - 
-  - 
-  - 
-  - 
+  - Player
+  - NPC
+  - Projectile
+  - World
+  - Interactable
   - 
   - 
   - 
