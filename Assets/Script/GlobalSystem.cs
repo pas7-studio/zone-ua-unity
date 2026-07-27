@@ -123,7 +123,7 @@ public sealed class GlobalSystem : MonoBehaviour
         prefab = null;
         if (bloodPrefabs == null || bloodPrefabs.Length == 0) return false;
 
-        prefab = bloodPrefabs[Random.Range(0, bloodPrefabs.Length)];
+        prefab = bloodPrefabs[UnityEngine.Random.Range(0, bloodPrefabs.Length)];
         return prefab != null;
     }
 
