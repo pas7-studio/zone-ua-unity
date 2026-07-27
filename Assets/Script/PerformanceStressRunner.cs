@@ -118,11 +118,12 @@ public sealed class PerformanceStressRunner : MonoBehaviour
 
     private void CleanupSpawnedObjects()
     {
+        RuntimeObjectPool pool = GlobalSystem.Instance != null ? GlobalSystem.Instance.ObjectPool : null;
         for (int i = 0; i < spawnedObjects.Count; i++)
         {
             GameObject instance = spawnedObjects[i];
             if (instance == null) continue;
-            if (GlobalSystem.Instance != null && GlobalSystem.Instance.Owns(instance))
+            if (pool != null && pool.Owns(instance))
                 GlobalSystem.Instance.Release(instance);
             else
                 Destroy(instance);
