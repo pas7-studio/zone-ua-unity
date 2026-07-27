@@ -9,7 +9,8 @@
     "ZoneUA.AI",
     "ZoneUA.World",
     "ZoneUA.Input",
-    "ZoneUA.Performance"
+    "ZoneUA.Performance",
+    "ZoneUA.SceneManagement"
   ],
   "includePlatforms": [
     "Editor"
