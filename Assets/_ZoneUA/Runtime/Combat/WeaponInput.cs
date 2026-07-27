@@ -16,10 +16,7 @@ namespace ZoneUA.Combat
         private IWeaponCommands commands;
         private IWeaponInputOwnership inputOwnership;
 
-        private void Awake()
-        {
-            ResolveSource();
-        }
+        private void Awake() => ResolveSource();
 
         private void OnEnable()
         {
@@ -40,32 +37,25 @@ namespace ZoneUA.Combat
                 return;
             }
 
-            if (Input.GetButtonDown(fireButton))
-            {
-                commands.StartFire();
-            }
-
-            if (Input.GetButtonUp(fireButton))
-            {
-                commands.StopFire();
-            }
-
-            if (Input.GetKeyDown(reloadKey))
-            {
-                commands.Reload();
-            }
-
-            if (Input.GetKeyDown(switchModeKey))
-            {
-                commands.SwitchFireMode();
-            }
+            if (Input.GetButtonDown(fireButton)) commands.StartFire();
+            if (Input.GetButtonUp(fireButton)) commands.StopFire();
+            if (Input.GetKeyDown(reloadKey)) commands.Reload();
+            if (Input.GetKeyDown(switchModeKey)) commands.SwitchFireMode();
         }
 
         private void ResolveSource()
         {
             if (commandSource == null)
             {
-                commandSource = GetComponent<MonoBehaviour>();
+                MonoBehaviour[] behaviours = GetComponents<MonoBehaviour>();
+                for (int i = 0; i < behaviours.Length; i++)
+                {
+                    if (behaviours[i] is IWeaponCommands)
+                    {
+                        commandSource = behaviours[i];
+                        break;
+                    }
+                }
             }
 
             commands = commandSource as IWeaponCommands;
