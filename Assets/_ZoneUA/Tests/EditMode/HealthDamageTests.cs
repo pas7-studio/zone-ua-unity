@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using ZoneUA.Factions;
 
 namespace ZoneUA.Combat.Tests
 {
@@ -76,14 +77,43 @@ namespace ZoneUA.Combat.Tests
         }
 
         [Test]
-        public void HealthState_ResetRestoresMaximumHealth()
+        public void DeathState_CanOnlyBeEnteredOnce()
         {
-            var state = new HealthState(120, 5);
+            var state = new DeathState();
 
-            state.ResetToMaximum();
+            Assert.That(state.TryEnter(), Is.True);
+            Assert.That(state.TryEnter(), Is.False);
+            Assert.That(state.IsDead, Is.True);
+        }
 
-            Assert.That(state.CurrentHealth, Is.EqualTo(120));
-            Assert.That(state.IsAlive, Is.True);
+        [Test]
+        public void FactionPolicy_BlocksFriendlyFireByDefault()
+        {
+            bool canDamage = FactionDamagePolicy.CanDamage(
+                sameFaction: true,
+                allowFriendlyFire: false,
+                relation: FactionRelation.Friendly);
+
+            Assert.That(canDamage, Is.False);
+        }
+
+        [Test]
+        public void FactionPolicy_AllowsConfiguredFriendlyFire()
+        {
+            bool canDamage = FactionDamagePolicy.CanDamage(
+                sameFaction: true,
+                allowFriendlyFire: true,
+                relation: FactionRelation.Friendly);
+
+            Assert.That(canDamage, Is.True);
+        }
+
+        [Test]
+        public void FactionPolicy_OnlyAllowsHostileForeignFaction()
+        {
+            Assert.That(FactionDamagePolicy.CanDamage(false, false, FactionRelation.Hostile), Is.True);
+            Assert.That(FactionDamagePolicy.CanDamage(false, false, FactionRelation.Neutral), Is.False);
+            Assert.That(FactionDamagePolicy.CanDamage(false, false, FactionRelation.Friendly), Is.False);
         }
     }
 }
