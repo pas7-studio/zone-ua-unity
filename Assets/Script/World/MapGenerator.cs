@@ -121,7 +121,7 @@ public sealed class MapGenerator : MonoBehaviour
 
     private void GenerateFromSettings()
     {
-        int runtimeSeed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+        int runtimeSeed = UnityEngine.Random.Range(-1000000000, 1000000000);
         lastResolvedSeed = settings.ResolveSeed(runtimeSeed);
         var context = new WorldGenerationContext(lastResolvedSeed);
         decorationPositions.Clear();
@@ -202,9 +202,10 @@ public sealed class MapGenerator : MonoBehaviour
         }
 
         float angle = WorldDeterminism.Value01(lastResolvedSeed, x, y, 503) * 360f;
+        Vector3 worldPosition = OutputRoot.TransformPoint((Vector3)candidateLocalPosition);
         GameObject decoration = Instantiate(
             prefab,
-            OutputRoot.TransformPoint(candidateLocalPosition),
+            worldPosition,
             Quaternion.Euler(0f, 0f, angle),
             OutputRoot);
         spawnedObjects.Add(decoration);
