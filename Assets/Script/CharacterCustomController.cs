@@ -47,7 +47,7 @@ public sealed class CharacterCustomController : MonoBehaviour
             body.MovePosition(body.position + movementInput * targetSpeed * Time.fixedDeltaTime);
         }
 
-        animator.SetFloat(SpeedHash, currentSpeed);
+        SetAnimatorSpeed(currentSpeed);
     }
 
     public void SetMovementInput(Vector2 input)
@@ -72,7 +72,7 @@ public sealed class CharacterCustomController : MonoBehaviour
         lookInput = Vector2.zero;
         sprintRequested = false;
         currentSpeed = 0f;
-        animator?.SetFloat(SpeedHash, 0f);
+        SetAnimatorSpeed(0f);
     }
 
     private void UpdateFacing()
@@ -108,6 +108,12 @@ public sealed class CharacterCustomController : MonoBehaviour
         {
             transform.rotation = Quaternion.Euler(0f, targetYRotation, 0f);
         }
+    }
+
+    private void SetAnimatorSpeed(float value)
+    {
+        if (animator != null && animator.isActiveAndEnabled && animator.isInitialized && animator.runtimeAnimatorController != null)
+            animator.SetFloat(SpeedHash, value);
     }
 
     private void OnDisable()

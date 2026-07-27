@@ -87,17 +87,20 @@ public sealed class SceneBootstrapper : MonoBehaviour
         Scene alreadyLoaded = SceneManager.GetSceneByName(targetScene);
         if (!alreadyLoaded.isLoaded)
         {
-            AsyncOperation load = SceneManager.LoadSceneAsync(targetScene, LoadSceneMode.Additive);
+            LoadSceneMode loadMode = string.IsNullOrWhiteSpace(previousScene)
+                ? LoadSceneMode.Single
+                : LoadSceneMode.Additive;
+            AsyncOperation load = SceneManager.LoadSceneAsync(targetScene, loadMode);
             if (load == null)
             {
                 FailTransition($"Unity could not start loading scene '{targetScene}'.");
                 yield break;
             }
 
-            load.allowSceneActivation = false;
-            while (load.progress < 0.9f)
+            load.allowSceneActivation = true;
+            while (!load.isDone)
             {
-                transitionState.SetProgress(load.progress / 0.9f);
+                transitionState.SetProgress(Mathf.Clamp01(load.progress));
                 RaiseTransitionChanged();
                 yield return null;
             }
@@ -116,7 +119,19 @@ public sealed class SceneBootstrapper : MonoBehaviour
             yield break;
         }
 
-        SceneManager.SetActiveScene(target);
+        // Unity can report the additive scene as loaded one frame before it can
+        // become the active scene. Retry once after yielding to the player loop
+        // so bootstrap never leaves gameplay running in the empty bootstrap scene.
+        yield return null;
+        if (!SceneManager.SetActiveScene(target))
+        {
+            yield return null;
+            if (!SceneManager.SetActiveScene(target))
+            {
+                FailTransition($"Scene '{targetScene}' loaded but could not become active.");
+                yield break;
+            }
+        }
         activeGameplayScene = targetScene;
         SceneActivated?.Invoke(targetScene);
 
