@@ -1,23 +1,31 @@
+using System;
 using System.Collections;
 using UnityEngine;
 
 public sealed class WeaponSwitcher : MonoBehaviour
 {
+    private static readonly int SwitchHash = Animator.StringToHash("Switch");
+
     [Header("Weapons")]
     [SerializeField] private GameObject weapon1;
     [SerializeField] private GameObject weapon2;
 
     [Header("Switching")]
     [SerializeField, Min(0f)] private float switchingTime = 1f;
-    [SerializeField] private GameObject selectedWeapon;
+    [SerializeField, HideInInspector] private GameObject selectedWeapon;
 
     private readonly GameObject[] weapons = new GameObject[2];
     private readonly Animator[] animators = new Animator[2];
     private readonly WeaponController[] controllers = new WeaponController[2];
 
-    private UIAmmoSystem ammoSystem;
     private Coroutine switchRoutine;
     private bool isSwitching;
+
+    public event Action<WeaponController> ActiveWeaponChanged;
+
+    public GameObject SelectedWeapon => selectedWeapon;
+    public WeaponController ActiveWeaponController { get; private set; }
+    public bool IsSwitching => isSwitching;
 
     private void Awake()
     {
@@ -38,17 +46,16 @@ public sealed class WeaponSwitcher : MonoBehaviour
 
     private void Start()
     {
-        ammoSystem = GlobalSystem.Instance != null ? GlobalSystem.Instance.AmmoUI : null;
-
         for (int i = 0; i < weapons.Length; i++)
         {
             if (weapons[i] != null && weapons[i].activeSelf)
             {
-                selectedWeapon = weapons[i];
-                RefreshAmmoUI(controllers[i]);
-                break;
+                SetActiveWeapon(weapons[i], controllers[i]);
+                return;
             }
         }
+
+        SetActiveWeapon(null, null);
     }
 
     private void Update()
@@ -71,7 +78,7 @@ public sealed class WeaponSwitcher : MonoBehaviour
         }
     }
 
-    private void RequestSwitch(int index)
+    public void RequestSwitch(int index)
     {
         if (index < 0 || index >= weapons.Length || weapons[index] == null)
         {
@@ -98,12 +105,12 @@ public sealed class WeaponSwitcher : MonoBehaviour
         SetAllWeaponsActive(false);
 
         newWeapon.SetActive(true);
-        selectedWeapon = newWeapon;
+        SetActiveWeapon(newWeapon, newController);
 
         if (newAnimator != null)
         {
             newAnimator.enabled = true;
-            newAnimator.SetTrigger("Switch");
+            newAnimator.SetTrigger(SwitchHash);
         }
 
         if (switchingTime > 0f)
@@ -112,7 +119,6 @@ public sealed class WeaponSwitcher : MonoBehaviour
         }
 
         newController?.WeaponChanged();
-        RefreshAmmoUI(newController);
 
         if (newAnimator != null)
         {
@@ -132,8 +138,20 @@ public sealed class WeaponSwitcher : MonoBehaviour
         }
 
         isSwitching = false;
-        selectedWeapon = null;
         SetAllWeaponsActive(false);
+        SetActiveWeapon(null, null);
+    }
+
+    private void SetActiveWeapon(GameObject weaponObject, WeaponController controller)
+    {
+        if (selectedWeapon == weaponObject && ActiveWeaponController == controller)
+        {
+            return;
+        }
+
+        selectedWeapon = weaponObject;
+        ActiveWeaponController = controller;
+        ActiveWeaponChanged?.Invoke(controller);
     }
 
     private void SetAllWeaponsActive(bool state)
@@ -147,15 +165,8 @@ public sealed class WeaponSwitcher : MonoBehaviour
         }
     }
 
-    private void RefreshAmmoUI(WeaponController controller)
+    private void OnValidate()
     {
-        if (ammoSystem == null || controller == null || controller.WeaponData == null)
-        {
-            return;
-        }
-
-        int maximumAmmo = controller.WeaponData.MaximumAmmo;
-        ammoSystem.SetMaximumAmmo(maximumAmmo);
-        ammoSystem.SetAmmo(controller.CurrentAmmo, maximumAmmo);
+        switchingTime = Mathf.Max(0f, switchingTime);
     }
 }
