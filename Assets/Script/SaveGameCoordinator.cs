@@ -12,14 +12,17 @@ public sealed class SaveGameCoordinator : MonoBehaviour
     [SerializeField] private WeaponSwitcher weaponSwitcher;
     [SerializeField] private SceneBootstrapper sceneBootstrapper;
     [SerializeField] private string defaultSlot = "autosave";
+    [SerializeField] private int currentWorldSeed;
     [SerializeField, Min(0f)] private float autosaveIntervalSeconds = 120f;
     [SerializeField] private bool autosaveOnApplicationPause = true;
     [SerializeField] private bool autosaveOnApplicationQuit = true;
 
     private SaveSlotStore store;
     private SaveGameData pendingRestore;
+    private string pendingSlotId = string.Empty;
     private float autosaveTimer;
 
+    public int CurrentWorldSeed => currentWorldSeed;
     public event Action<string> Saved;
     public event Action<string> Loaded;
     public event Action<string> SaveFailed;
@@ -50,6 +53,8 @@ public sealed class SaveGameCoordinator : MonoBehaviour
         Save(defaultSlot);
     }
 
+    public void SetWorldSeed(int seed) => currentWorldSeed = seed;
+
     [ContextMenu("Save Default Slot")]
     public void SaveDefault() => Save(defaultSlot);
 
@@ -61,8 +66,7 @@ public sealed class SaveGameCoordinator : MonoBehaviour
         try
         {
             ResolveReferences();
-            SaveGameData data = Capture(slotId);
-            store.Save(slotId, data);
+            store.Save(slotId, Capture(slotId));
             Saved?.Invoke(slotId);
             return true;
         }
@@ -83,14 +87,21 @@ public sealed class SaveGameCoordinator : MonoBehaviour
         }
 
         pendingRestore = data;
+        pendingSlotId = slotId;
         string currentScene = SceneManager.GetActiveScene().name;
         if (sceneBootstrapper != null && !string.IsNullOrWhiteSpace(data.activeScene) && data.activeScene != currentScene)
         {
-            sceneBootstrapper.LoadScene(data.activeScene);
+            if (!sceneBootstrapper.LoadScene(data.activeScene))
+            {
+                pendingRestore = null;
+                pendingSlotId = string.Empty;
+                LoadFailed?.Invoke($"Could not start loading scene '{data.activeScene}'.");
+                return false;
+            }
             return true;
         }
 
-        ApplyPendingRestore(slotId);
+        ApplyPendingRestore();
         return true;
     }
 
@@ -105,10 +116,10 @@ public sealed class SaveGameCoordinator : MonoBehaviour
         var data = new SaveGameData
         {
             activeScene = SceneManager.GetActiveScene().name,
+            worldSeed = currentWorldSeed,
             player = new PlayerSaveData()
         };
         data.Stamp(slotId, DateTime.UtcNow);
-
         if (playerRoot != null)
         {
             data.player.position = playerRoot.position;
@@ -123,29 +134,29 @@ public sealed class SaveGameCoordinator : MonoBehaviour
         return data;
     }
 
-    private void ApplyPendingRestore(string slotId)
+    private void ApplyPendingRestore()
     {
         if (pendingRestore == null) return;
         ResolveReferences();
+        currentWorldSeed = pendingRestore.worldSeed;
         PlayerSaveData player = pendingRestore.player ?? new PlayerSaveData();
         if (playerRoot != null)
-        {
             playerRoot.SetPositionAndRotation(player.position, Quaternion.Euler(0f, 0f, player.rotationZ));
-        }
         if (playerHealth != null)
         {
             playerHealth.SetMaximumHealth(player.maximumHealth);
             playerHealth.SetHealth(player.currentHealth);
         }
         if (weaponSwitcher != null && player.activeWeaponIndex >= 0)
-        {
             weaponSwitcher.RequestSwitch(player.activeWeaponIndex);
-        }
+
+        string loadedSlot = pendingSlotId;
         pendingRestore = null;
-        Loaded?.Invoke(slotId);
+        pendingSlotId = string.Empty;
+        Loaded?.Invoke(loadedSlot);
     }
 
-    private void OnSceneActivated(string sceneName) => ApplyPendingRestore(defaultSlot);
+    private void OnSceneActivated(string sceneName) => ApplyPendingRestore();
 
     private void ResolveReferences()
     {
