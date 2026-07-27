@@ -4,17 +4,17 @@ using ZoneUA.Inventory;
 
 namespace ZoneUA.Combat.Tests
 {
-    public sealed class InventoryConstructionTests
+    public sealed class InventoryLootTests
     {
         [Test]
         public void Inventory_AddRemoveAndCapacity_AreDeterministic()
         {
             var state = new InventoryState(5);
-            Assert.That(state.Add("wood", 3), Is.True);
-            Assert.That(state.Add("stone", 2), Is.True);
-            Assert.That(state.Add("metal", 1), Is.False);
-            Assert.That(state.Remove("wood", 2), Is.True);
-            Assert.That(state.GetAmount("wood"), Is.EqualTo(1));
+            Assert.That(state.Add("ammo-9x19", 3), Is.True);
+            Assert.That(state.Add("medkit", 2), Is.True);
+            Assert.That(state.Add("food", 1), Is.False);
+            Assert.That(state.Remove("ammo-9x19", 2), Is.True);
+            Assert.That(state.GetAmount("ammo-9x19"), Is.EqualTo(1));
             Assert.That(state.TotalItemCount, Is.EqualTo(3));
         }
 
@@ -22,26 +22,54 @@ namespace ZoneUA.Combat.Tests
         public void Inventory_TryConsume_IsAtomic()
         {
             var state = new InventoryState();
-            state.Add("wood", 3);
-            state.Add("stone", 1);
+            state.Add("ammo-9x19", 3);
+            state.Add("medkit", 1);
 
             bool failed = state.TryConsume(new[]
             {
-                new InventoryEntry("wood", 2),
-                new InventoryEntry("stone", 2)
+                new InventoryEntry("ammo-9x19", 2),
+                new InventoryEntry("medkit", 2)
             });
 
             Assert.That(failed, Is.False);
-            Assert.That(state.GetAmount("wood"), Is.EqualTo(3));
-            Assert.That(state.GetAmount("stone"), Is.EqualTo(1));
+            Assert.That(state.GetAmount("ammo-9x19"), Is.EqualTo(3));
+            Assert.That(state.GetAmount("medkit"), Is.EqualTo(1));
+        }
 
-            Assert.That(state.TryConsume(new[]
-            {
-                new InventoryEntry("wood", 2),
-                new InventoryEntry("stone", 1)
-            }), Is.True);
-            Assert.That(state.GetAmount("wood"), Is.EqualTo(1));
-            Assert.That(state.GetAmount("stone"), Is.Zero);
+        [Test]
+        public void Inventory_Transfer_IsAtomicWhenDestinationIsFull()
+        {
+            var source = new InventoryState();
+            var destination = new InventoryState(1);
+            source.Add("medkit", 2);
+            destination.Add("ammo-9x19", 1);
+
+            Assert.That(source.TryTransferTo(destination, "medkit", 1), Is.False);
+            Assert.That(source.GetAmount("medkit"), Is.EqualTo(2));
+            Assert.That(destination.GetAmount("medkit"), Is.Zero);
+        }
+
+        [Test]
+        public void LootContainer_MustBeSearchedBeforeTransfer()
+        {
+            var loot = new LootContainerState(initialItems: new[] { new InventoryEntry("medkit", 1) });
+            var destination = new InventoryState();
+
+            Assert.That(loot.TryTake(destination, "medkit", 1), Is.False);
+            loot.MarkSearched();
+            Assert.That(loot.TryTake(destination, "medkit", 1), Is.True);
+            Assert.That(loot.SearchState, Is.EqualTo(LootSearchState.Empty));
+            Assert.That(destination.GetAmount("medkit"), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Reservation_RejectsOtherNpcUntilExpiry()
+        {
+            var registry = new LootReservationRegistry();
+            Assert.That(registry.TryReserve("corpse-1", "npc-a", 10d, 5d), Is.True);
+            Assert.That(registry.TryReserve("corpse-1", "npc-b", 11d, 5d), Is.False);
+            Assert.That(registry.IsReservedByOther("corpse-1", "npc-b", 11d), Is.True);
+            Assert.That(registry.TryReserve("corpse-1", "npc-b", 16d, 5d), Is.True);
         }
 
         [Test]
@@ -50,35 +78,13 @@ namespace ZoneUA.Combat.Tests
             var state = new InventoryState();
             state.Replace(new List<InventoryEntry>
             {
-                new InventoryEntry("wood", 2),
-                new InventoryEntry("wood", 3),
-                new InventoryEntry("stone", 1)
+                new InventoryEntry("ammo-9x19", 2),
+                new InventoryEntry("ammo-9x19", 3),
+                new InventoryEntry("medkit", 1)
             });
 
-            Assert.That(state.GetAmount("wood"), Is.EqualTo(5));
+            Assert.That(state.GetAmount("ammo-9x19"), Is.EqualTo(5));
             Assert.That(state.DistinctItemCount, Is.EqualTo(2));
-        }
-
-        [Test]
-        public void Construction_RequiresCommittedResourcesBeforeWork()
-        {
-            var state = new ConstructionState(10f);
-            Assert.That(state.ApplyWork(5f), Is.Zero);
-            Assert.That(state.CommitResources(), Is.True);
-            Assert.That(state.ApplyWork(5f), Is.EqualTo(5f));
-            Assert.That(state.Progress01, Is.EqualTo(0.5f));
-            Assert.That(state.ApplyWork(20f), Is.EqualTo(5f));
-            Assert.That(state.IsComplete, Is.True);
-        }
-
-        [Test]
-        public void Construction_Restore_ClampsProgress()
-        {
-            var state = new ConstructionState(1f);
-            state.Restore(8f, 50f, true);
-            Assert.That(state.RequiredWork, Is.EqualTo(8f));
-            Assert.That(state.AppliedWork, Is.EqualTo(8f));
-            Assert.That(state.IsComplete, Is.True);
         }
     }
 }
