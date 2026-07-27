@@ -1,103 +1,118 @@
 using System.Collections;
 using UnityEngine;
 
-public class WeaponSwitcher : MonoBehaviour
+public sealed class WeaponSwitcher : MonoBehaviour
 {
-    public GameObject weapon1;
-    public GameObject weapon2;
+    [Header("Weapons")]
+    [SerializeField] private GameObject weapon1;
+    [SerializeField] private GameObject weapon2;
 
-    [SerializeField]
-    private float switchingTime = 1f;
+    [Header("Switching")]
+    [SerializeField, Min(0f)] private float switchingTime = 1f;
+    [SerializeField] private GameObject selectedWeapon;
 
-    [SerializeField]
-    private GameObject selectedWeapon;
+    private readonly GameObject[] weapons = new GameObject[2];
+    private readonly Animator[] animators = new Animator[2];
+    private readonly WeaponController[] controllers = new WeaponController[2];
 
-    private Animator weapon1Animator;
-    private Animator weapon2Animator;
-
-    private bool isSwitching = false;
-
-    private GlobalSystem globalSystem;
     private UIAmmoSystem ammoSystem;
+    private Coroutine switchRoutine;
+    private bool isSwitching;
+
+    private void Awake()
+    {
+        weapons[0] = weapon1;
+        weapons[1] = weapon2;
+
+        for (int i = 0; i < weapons.Length; i++)
+        {
+            if (weapons[i] == null)
+            {
+                continue;
+            }
+
+            animators[i] = weapons[i].GetComponent<Animator>();
+            controllers[i] = weapons[i].GetComponent<WeaponController>();
+        }
+    }
 
     private void Start()
     {
-        globalSystem = GameObject.FindGameObjectWithTag("System").GetComponent<GlobalSystem>();
-        ammoSystem = globalSystem.UIAmmoSystem;
+        ammoSystem = GlobalSystem.Instance != null ? GlobalSystem.Instance.AmmoUI : null;
+
+        for (int i = 0; i < weapons.Length; i++)
+        {
+            if (weapons[i] != null && weapons[i].activeSelf)
+            {
+                selectedWeapon = weapons[i];
+                RefreshAmmoUI(controllers[i]);
+                break;
+            }
+        }
     }
 
-    //rewrite this, code is shit
     private void Update()
     {
-        // Only switch weapons if not already switching
         if (!isSwitching)
         {
-            // Switch to weapon 1 when the player presses the 1 key
             if (Input.GetKeyDown(KeyCode.Alpha1))
             {
-                // Find the animator component on weapon 1
-                weapon1Animator = weapon1.GetComponent<Animator>();
-                weapon1Animator.enabled = true;
-
-                selectedWeapon = weapon1;
-                StartCoroutine(SwitchWeapon(weapon1, weapon1Animator));
+                RequestSwitch(0);
             }
-
-            // Switch to weapon 2 when the player presses the 2 key
-            if (Input.GetKeyDown(KeyCode.Alpha2))
+            else if (Input.GetKeyDown(KeyCode.Alpha2))
             {
-                // Find the animator component on weapon 2
-                weapon2Animator = weapon2.GetComponent<Animator>();
-                weapon2Animator.enabled = true;
-
-                selectedWeapon = weapon2;
-                StartCoroutine(SwitchWeapon(weapon2, weapon2Animator));
+                RequestSwitch(1);
             }
         }
 
-        // Turn off any active weapon when the player presses the Q key
         if (Input.GetKeyDown(KeyCode.Q))
         {
-            StartCoroutine(SwitchWeapon(null, null));
+            HideAllWeapons();
         }
     }
 
-    public void HideAllWeapons()
+    private void RequestSwitch(int index)
     {
-        StartCoroutine(SwitchWeapon(null, null));
+        if (index < 0 || index >= weapons.Length || weapons[index] == null)
+        {
+            return;
+        }
+
+        if (switchRoutine != null)
+        {
+            StopCoroutine(switchRoutine);
+        }
+
+        switchRoutine = StartCoroutine(SwitchWeaponRoutine(
+            weapons[index],
+            animators[index],
+            controllers[index]));
     }
 
-    private IEnumerator SwitchWeapon(GameObject newWeapon, Animator newAnimator)
+    private IEnumerator SwitchWeaponRoutine(
+        GameObject newWeapon,
+        Animator newAnimator,
+        WeaponController newController)
     {
         isSwitching = true;
-        // Disable the current weapon
-        if (weapon1.activeSelf)
-        {
-            weapon1.SetActive(false);
-        }
-        else if (weapon2.activeSelf)
-        {
-            weapon2.SetActive(false);
-        }
+        SetAllWeaponsActive(false);
 
-        // Enable the new weapon, if any
-        if (newWeapon != null)
-        {
-            newWeapon.SetActive(true);
-        }
+        newWeapon.SetActive(true);
+        selectedWeapon = newWeapon;
 
-        // Play the weapon switch animation, if there is a new animator
         if (newAnimator != null)
         {
+            newAnimator.enabled = true;
             newAnimator.SetTrigger("Switch");
         }
 
-        yield return new WaitForSeconds(switchingTime);
+        if (switchingTime > 0f)
+        {
+            yield return new WaitForSeconds(switchingTime);
+        }
 
-        var newWeaponController = newWeapon.GetComponent<WeaponController>();
-        newWeaponController.WeaponChanged();
-        ammoSystem.SetMaximumAmmo(newWeaponController.weapon.weaponAmmoMax);
-        ammoSystem.SetAmmo(newWeaponController.currentAmmo, newWeaponController.weapon.weaponAmmoMax);
+        newController?.WeaponChanged();
+        RefreshAmmoUI(newController);
 
         if (newAnimator != null)
         {
@@ -105,5 +120,42 @@ public class WeaponSwitcher : MonoBehaviour
         }
 
         isSwitching = false;
+        switchRoutine = null;
+    }
+
+    public void HideAllWeapons()
+    {
+        if (switchRoutine != null)
+        {
+            StopCoroutine(switchRoutine);
+            switchRoutine = null;
+        }
+
+        isSwitching = false;
+        selectedWeapon = null;
+        SetAllWeaponsActive(false);
+    }
+
+    private void SetAllWeaponsActive(bool state)
+    {
+        for (int i = 0; i < weapons.Length; i++)
+        {
+            if (weapons[i] != null)
+            {
+                weapons[i].SetActive(state);
+            }
+        }
+    }
+
+    private void RefreshAmmoUI(WeaponController controller)
+    {
+        if (ammoSystem == null || controller == null || controller.WeaponData == null)
+        {
+            return;
+        }
+
+        int maximumAmmo = controller.WeaponData.MaximumAmmo;
+        ammoSystem.SetMaximumAmmo(maximumAmmo);
+        ammoSystem.SetAmmo(controller.CurrentAmmo, maximumAmmo);
     }
 }

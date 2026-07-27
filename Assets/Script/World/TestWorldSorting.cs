@@ -1,38 +1,44 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class TestWorldSorting : MonoBehaviour
+public sealed class TestWorldSorting : MonoBehaviour
 {
-    // A list of all tags that need to be sorted
-    public List<string> tagsToSort;
+    [SerializeField] private List<string> tagsToSort = new List<string>();
 
-    // A dictionary to store the sorting order for each tag
-    private Dictionary<string, int> tagSortingOrder = new Dictionary<string, int>();
+    private readonly Dictionary<string, int> tagSortingOrder =
+        new Dictionary<string, int>();
 
+    [ContextMenu("Sort All")]
     public void SortAll()
     {
-        // Initialize the tagSortingOrder dictionary
+        tagSortingOrder.Clear();
+
         for (int i = 0; i < tagsToSort.Count; i++)
         {
             tagSortingOrder[tagsToSort[i]] = i;
         }
 
-        // Sort the sprites by tag and then by y-axis position
-        foreach (string tag in tagsToSort)
+        for (int tagIndex = 0; tagIndex < tagsToSort.Count; tagIndex++)
         {
-            // Find all sprites with the current tag
-            GameObject[] spritesWithTag = GameObject.FindGameObjectsWithTag(tag);
+            string tag = tagsToSort[tagIndex];
+            GameObject[] objects = GameObject.FindGameObjectsWithTag(tag);
 
-            // Sort the sprites with the current tag by y-axis position
-            System.Array.Sort(spritesWithTag, (a, b) => b.transform.position.y.CompareTo(a.transform.position.y));
+            System.Array.Sort(
+                objects,
+                (left, right) =>
+                    right.transform.position.y.CompareTo(left.transform.position.y));
 
-            // Assign sorting order levels to the sorted sprites
-            for (int i = 0; i < spritesWithTag.Length; i++)
+            int baseOrder = tagSortingOrder[tag] * 1000;
+            for (int i = 0; i < objects.Length; i++)
             {
-                spritesWithTag[i].GetComponent<SpriteRenderer>().sortingOrder = i + (tagSortingOrder[tag] * 1000);
-                var grass = spritesWithTag[i].GetComponent<Grass>();
-                if(grass != null ) {
-                    grass.setSortingFromSource();
+                if (objects[i].TryGetComponent(out SpriteRenderer renderer))
+                {
+                    renderer.sortingOrder = baseOrder + i;
+                }
+
+                if (objects[i].TryGetComponent(out Grass grass))
+                {
+                    grass.SetSortingFromSource();
                 }
             }
         }

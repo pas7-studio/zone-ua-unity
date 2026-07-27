@@ -1,63 +1,73 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
-public class GrassGenerator : MonoBehaviour
+[RequireComponent(typeof(Renderer))]
+public sealed class GrassGenerator : MonoBehaviour
 {
-    public GameObject[] grassPrefabs;
-    public float grassScaleMin = 0.5f;
-    public float grassScaleMax = 1.5f;
-    public int minNumGrassPrefabs = 0;
-    public int maxNumGrassPrefabs = 5;
-    public float zeroCoefficient = 0.5f;
+    [SerializeField] private GameObject[] grassPrefabs;
+    [SerializeField, Min(0f)] private float grassScaleMin = 0.5f;
+    [SerializeField, Min(0f)] private float grassScaleMax = 1.5f;
+    [SerializeField, Min(0)] private int minNumGrassPrefabs;
+    [SerializeField, Min(0)] private int maxNumGrassPrefabs = 5;
+    [SerializeField, Range(0f, 1f)] private float zeroCoefficient = 0.5f;
+    [SerializeField] private int rotateYMin = -15;
+    [SerializeField] private int rotateYMax = 15;
 
-    public int rotateYMin = -15;
-    public int rotateYMax = 15;
+    private Renderer cachedRenderer;
+
+    private void Awake()
+    {
+        cachedRenderer = GetComponent<Renderer>();
+    }
 
     public void GenerateGrass()
     {
-        // get bounds of tile
-        Bounds bounds = GetComponent<Renderer>().bounds;
-
-        // get grass sorting script
-        // GrassSorting grassSorting = GetComponentInChildren<GrassSorting>();
-
-        // generate random number of grass prefabs
-        var numGrassPrefabs = Random.Range(minNumGrassPrefabs, maxNumGrassPrefabs + 1);
-        if (minNumGrassPrefabs == 0 && Random.value > zeroCoefficient)
+        if (grassPrefabs == null || grassPrefabs.Length == 0)
         {
-            numGrassPrefabs = Random.Range(1, maxNumGrassPrefabs + 1);
-        }
-        else if(minNumGrassPrefabs == 0)
-        {
-            numGrassPrefabs = 0;
+            return;
         }
 
-        for (int i = 0; i < numGrassPrefabs; i++)
-        {
-            // choose random grass prefab
-            GameObject grassPrefab = grassPrefabs[Random.Range(0, grassPrefabs.Length)];
+        cachedRenderer ??= GetComponent<Renderer>();
+        Bounds bounds = cachedRenderer.bounds;
 
-            // generate random position and rotation within bounds
-            Vector2 pos = new Vector2(
+        int count = Random.Range(minNumGrassPrefabs, maxNumGrassPrefabs + 1);
+        if (minNumGrassPrefabs == 0)
+        {
+            count = Random.value <= zeroCoefficient
+                ? 0
+                : Random.Range(1, maxNumGrassPrefabs + 1);
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            GameObject prefab = grassPrefabs[Random.Range(0, grassPrefabs.Length)];
+            if (prefab == null)
+            {
+                continue;
+            }
+
+            Vector2 position = new Vector2(
                 Random.Range(bounds.min.x, bounds.max.x),
-                Random.Range(bounds.min.y, bounds.max.y)
-            );
-            Quaternion rot = Quaternion.Euler(0, Random.Range(rotateYMin, rotateYMax), 0);
+                Random.Range(bounds.min.y, bounds.max.y));
 
-            // generate random scale
+            Quaternion rotation = Quaternion.Euler(
+                0f,
+                Random.Range(rotateYMin, rotateYMax),
+                0f);
+
             float scale = Random.Range(grassScaleMin, grassScaleMax);
+            GameObject grass = Instantiate(prefab, position, rotation, transform);
+            grass.transform.localScale = new Vector3(scale, scale, 1f);
+        }
+    }
 
-            // instantiate grass prefab with randomized position, rotation, and scale
-            GameObject grass = Instantiate(grassPrefab, pos, rot, transform);
-            grass.transform.localScale = new Vector3(scale, scale, 0);
+    private void OnValidate()
+    {
+        grassScaleMax = Mathf.Max(grassScaleMin, grassScaleMax);
+        maxNumGrassPrefabs = Mathf.Max(minNumGrassPrefabs, maxNumGrassPrefabs);
 
-
-            // add grass sprite renderer to grass sorting script
-            // SpriteRenderer spriteRenderer = grass.GetComponentInChildren<SpriteRenderer>();
-            //grassSorting.grassSprites.Add(spriteRenderer);
+        if (rotateYMax < rotateYMin)
+        {
+            rotateYMax = rotateYMin;
         }
     }
 }
-
-

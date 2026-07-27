@@ -1,63 +1,59 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(Animator))]
-public class Death : MonoBehaviour
+public sealed class Death : MonoBehaviour
 {
-    private Animator animator;
-    private Rigidbody2D physic;
+    private static readonly int DeadByBulletHash = Animator.StringToHash("DeadByBullet");
 
-    //If player
+    private Animator animator;
+    private Rigidbody2D body;
     private CharacterCustomController characterController;
     private WeaponSwitcher weaponSwitcher;
-
-    //If NPC
     private NPCController npcController;
 
-    private GlobalSystem system;
+    public bool IsDead { get; private set; }
 
-    // Start is called before the first frame update
-    void Start()
+    private void Awake()
     {
         animator = GetComponent<Animator>();
-        physic = GetComponent<Rigidbody2D>();
+        body = GetComponent<Rigidbody2D>();
         characterController = GetComponent<CharacterCustomController>();
         weaponSwitcher = GetComponent<WeaponSwitcher>();
         npcController = GetComponent<NPCController>();
-        system = GameObject.FindGameObjectWithTag("System").GetComponent<GlobalSystem>();
     }
 
     public void Dead()
     {
-        physic.simulated = false;
-        animator.applyRootMotion = false;
-        animator.SetTrigger("DeadByBullet");
+        if (IsDead)
+        {
+            return;
+        }
 
-        if (characterController)
+        IsDead = true;
+        body.simulated = false;
+        animator.applyRootMotion = false;
+        animator.SetTrigger(DeadByBulletHash);
+
+        if (characterController != null)
         {
             characterController.enabled = false;
         }
-        if (weaponSwitcher)
+
+        if (weaponSwitcher != null)
         {
             weaponSwitcher.HideAllWeapons();
-            weaponSwitcher.StopAllCoroutines();
             weaponSwitcher.enabled = false;
         }
-        if (npcController)
+
+        if (npcController != null)
         {
-            npcController.SetTarget(null, NPCController.TargetType.BOTH);
-            npcController.SetWeaponShow(false);
-            npcController.StopAllWeaponCoroutines();
+            npcController.PrepareForDeath();
             npcController.enabled = false;
         }
-        if (system && !npcController)
+        else
         {
-            if (system.UIAmmoSystem)
-            {
-                system.UIAmmoSystem.ShowHideUI(false);
-            }
+            GlobalSystem.Instance?.AmmoUI?.ShowHideUI(false);
         }
     }
 }

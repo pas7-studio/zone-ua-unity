@@ -1,20 +1,8 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
-public class CameraPoint : MonoBehaviour
+public sealed class CameraPoint : MonoBehaviour
 {
-    public string pointName;
+    [SerializeField] private string pointName;
 
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
+    public string PointName => pointName;
 }

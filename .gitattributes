@@ -1,0 +1,29 @@
+* text=auto
+
+# Keep source and Unity YAML deterministic across platforms.
+*.cs text eol=lf
+*.asmdef text eol=lf
+*.asmref text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.shader text eol=lf
+*.shadergraph text eol=lf
+*.cginc text eol=lf
+*.meta text eol=lf
+*.unity text eol=lf
+*.prefab text eol=lf
+*.asset text eol=lf
+*.anim text eol=lf
+*.controller text eol=lf
+*.mat text eol=lf
+
+# Binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.psd binary
+*.tga binary
+*.mp3 binary
+*.wav binary
+*.ttf binary
+*.pdf binary

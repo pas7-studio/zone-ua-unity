@@ -1,28 +1,37 @@
 using UnityEngine;
 
-public class CharacterChunks : MonoBehaviour
+public sealed class CharacterChunks : MonoBehaviour
 {
-    private int currentChunk = -1;
+    private GrassSorting activeSorting;
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        TryActivateChunk(other);
+    }
 
     private void OnTriggerStay2D(Collider2D other)
     {
-        if (other.CompareTag("Chunk"))
+        if (activeSorting == null)
         {
-            int newChunk = other.gameObject.GetInstanceID();
-
-            if (newChunk != currentChunk)
-            {
-                currentChunk = newChunk;
-
-                GrassSorting[] grassSortings = FindObjectsOfType<GrassSorting>();
-
-                foreach (GrassSorting grassSorting in grassSortings)
-                {
-                    grassSorting.enabled = false;
-                }
-
-                other.GetComponent<GrassSorting>().enabled = true;
-            }
+            TryActivateChunk(other);
         }
+    }
+
+    private void TryActivateChunk(Collider2D other)
+    {
+        if (!other.CompareTag("Chunk") ||
+            !other.TryGetComponent(out GrassSorting newSorting) ||
+            newSorting == activeSorting)
+        {
+            return;
+        }
+
+        if (activeSorting != null)
+        {
+            activeSorting.enabled = false;
+        }
+
+        activeSorting = newSorting;
+        activeSorting.enabled = true;
     }
 }

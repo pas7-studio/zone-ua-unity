@@ -1,4 +1,0 @@
-repository "Zone-UA@Uo_OA@cloud"
-  path "/"
-    br "/main"
-    co "/main"

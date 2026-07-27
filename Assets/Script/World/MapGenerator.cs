@@ -1,155 +1,153 @@
-using System.Collections;
 using System.Collections.Generic;
-using System.Xml.Schema;
 using UnityEngine;
 
-public class MapGenerator : MonoBehaviour
+public sealed class MapGenerator : MonoBehaviour
 {
-    public int mapWidth;
-    public int mapHeight;
-    public float tileSize;
-    public float heightScale;
+    [Header("Map")]
+    [SerializeField, Min(1)] private int mapWidth = 1;
+    [SerializeField, Min(1)] private int mapHeight = 1;
+    [SerializeField, Min(0.01f)] private float tileSize = 1f;
+    [SerializeField, Min(0.0001f)] private float heightScale = 1f;
 
-    public int seed;
-    public bool useRandomSeed;
+    [Header("Seed")]
+    [SerializeField] private int seed;
+    [SerializeField] private bool useRandomSeed;
 
-    public GameObject[] tilePrefabs;
-    public float[] heightThresholds;
-    public GameObject[] specialPrefabs;
+    [Header("Biomes")]
+    [SerializeField] private GameObject[] tilePrefabs;
+    [SerializeField] private float[] heightThresholds;
+    [SerializeField] private GameObject[] specialPrefabs;
 
-    public bool enableChunkManager = true;
+    [Header("Runtime")]
+    [SerializeField] private bool enableChunkManager = true;
+    [SerializeField] private bool testGenerationMode;
+    [SerializeField, Min(0.1f)] private float generationInterval = 5f;
+
+    private readonly List<GameObject> spawnedTiles = new List<GameObject>();
+
     private ChunkManager chunkManager;
+    private float timeSinceLastGeneration;
 
-    public bool testGenerationMode = false;
-    public float generationInterval = 5f;
-    private float timeSinceLastGeneration = 0f;
-
-    private TestWorldSorting worldSorting;
-    private List<GameObject> spawnedTiles = new List<GameObject>();
-
-    // Start is called before the first frame update
-    void Start()
+    private void Awake()
     {
-        if (useRandomSeed)
-        {
-            seed = Random.Range(0, 100000);
-        }
-
-        worldSorting = GetComponent<TestWorldSorting>();
         chunkManager = GetComponent<ChunkManager>();
-        Generation();
     }
 
-    // Update is called once per frame
-    void Update()
+    private void Start()
     {
-        if (testGenerationMode)
+        Regenerate();
+    }
+
+    private void Update()
+    {
+        if (!testGenerationMode)
         {
-            timeSinceLastGeneration += Time.deltaTime;
-            if (timeSinceLastGeneration >= generationInterval)
-            {
-                ClearTiles();
-                Generation();
-                timeSinceLastGeneration = 0f;
-            }
-        }
-    }
-
-    void Generation()
-    {
-        GenerateBioms();
-        GenerateGrass();
-        //worldSorting.SortAll();
-    }
-
-    void GenerateGrass()
-    {
-        foreach(var tile in spawnedTiles)
-        {
-            var grassGenerator = tile.GetComponent<GrassGenerator>();
-            if(grassGenerator != null)
-            {
-                grassGenerator.GenerateGrass();
-            }
-        }
-    }
-
-    void GenerateBioms()
-    {
-        float[,] heightMap = GenerateHeightMap();
-
-        for (int x = 0; x < mapWidth; x++)
-        {
-            for (int y = 0; y < mapHeight; y++)
-            {
-                float heightValue = heightMap[x, y];
-                GameObject tilePrefab = ChooseTilePrefab(heightValue);
-
-                // Create the tile game object
-                GameObject tile = Instantiate(tilePrefab, transform);
-
-                // Set the tile's position
-                float xPos = x * tileSize;
-                float yPos = y * tileSize;
-                tile.transform.position = new Vector3(xPos, yPos, 0);
-
-                spawnedTiles.Add(tile);
-            }
+            return;
         }
 
-        chunkManager.enabled = enableChunkManager;
-    }
-
-    void ClearTiles()
-    {
-        Transform[] childTransforms = GetComponentsInChildren<Transform>();
-        foreach (Transform child in childTransforms)
+        timeSinceLastGeneration += Time.deltaTime;
+        if (timeSinceLastGeneration < generationInterval)
         {
-            if (child != transform)
-            {
-                Destroy(child.gameObject);
-            }
+            return;
         }
+
+        timeSinceLastGeneration = 0f;
+        Regenerate();
     }
 
-    float[,] GenerateHeightMap()
+    [ContextMenu("Regenerate Map")]
+    public void Regenerate()
     {
-        float[,] heightMap = new float[mapWidth, mapHeight];
+        ClearTiles();
 
         if (useRandomSeed)
         {
-            seed = Random.Range(0, 100000);
+            seed = UnityEngine.Random.Range(0, 100000);
         }
 
-        Random.InitState(seed);
+        GenerateBiomesAndGrass();
 
-        float xOffset = Random.Range(-10000f, 10000f);
-        float yOffset = Random.Range(-10000f, 10000f);
+        if (chunkManager != null)
+        {
+            chunkManager.RefreshChunks();
+            chunkManager.enabled = enableChunkManager;
+        }
+    }
+
+    private void GenerateBiomesAndGrass()
+    {
+        if (tilePrefabs == null || tilePrefabs.Length == 0)
+        {
+            Debug.LogWarning("Map generation skipped: no tile prefabs configured.", this);
+            return;
+        }
+
+        System.Random random = new System.Random(seed);
+        float xOffset = Mathf.Lerp(-10000f, 10000f, (float)random.NextDouble());
+        float yOffset = Mathf.Lerp(-10000f, 10000f, (float)random.NextDouble());
 
         for (int x = 0; x < mapWidth; x++)
         {
             for (int y = 0; y < mapHeight; y++)
             {
-                float xCoord = (float)x / mapWidth * heightScale + xOffset;
-                float yCoord = (float)y / mapHeight * heightScale + yOffset;
-                float sample = Mathf.PerlinNoise(xCoord, yCoord);
-                heightMap[x, y] = sample;
+                float xCoordinate = (float)x / mapWidth * heightScale + xOffset;
+                float yCoordinate = (float)y / mapHeight * heightScale + yOffset;
+                float heightValue = Mathf.PerlinNoise(xCoordinate, yCoordinate);
+
+                GameObject tilePrefab = ChooseTilePrefab(heightValue);
+                if (tilePrefab == null)
+                {
+                    continue;
+                }
+
+                GameObject tile = Instantiate(tilePrefab, transform);
+                tile.transform.localPosition = new Vector3(x * tileSize, y * tileSize, 0f);
+                spawnedTiles.Add(tile);
+
+                if (tile.TryGetComponent(out GrassGenerator grassGenerator))
+                {
+                    grassGenerator.GenerateGrass();
+                }
+            }
+        }
+    }
+
+    private void ClearTiles()
+    {
+        for (int i = 0; i < spawnedTiles.Count; i++)
+        {
+            if (spawnedTiles[i] != null)
+            {
+                Destroy(spawnedTiles[i]);
             }
         }
 
-        return heightMap;
+        spawnedTiles.Clear();
     }
 
-    GameObject ChooseTilePrefab(float heightValue)
+    private GameObject ChooseTilePrefab(float heightValue)
     {
-        for (int i = 0; i < heightThresholds.Length; i++)
+        int thresholdCount = heightThresholds != null ? heightThresholds.Length : 0;
+        int specialCount = specialPrefabs != null ? specialPrefabs.Length : 0;
+        int count = Mathf.Min(thresholdCount, specialCount);
+
+        for (int i = 0; i < count; i++)
         {
-            if (heightValue <= heightThresholds[i])
+            if (heightValue <= heightThresholds[i] && specialPrefabs[i] != null)
             {
                 return specialPrefabs[i];
             }
         }
 
         return tilePrefabs[tilePrefabs.Length - 1];
+    }
+
+    private void OnValidate()
+    {
+        mapWidth = Mathf.Max(1, mapWidth);
+        mapHeight = Mathf.Max(1, mapHeight);
+        tileSize = Mathf.Max(0.01f, tileSize);
+        heightScale = Mathf.Max(0.0001f, heightScale);
+        generationInterval = Mathf.Max(0.1f, generationInterval);
     }
 }

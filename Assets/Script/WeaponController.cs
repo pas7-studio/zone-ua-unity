@@ -3,77 +3,72 @@ using System.Collections;
 using UnityEngine;
 
 [RequireComponent(typeof(Weapon))]
-public class WeaponController : MonoBehaviour
+[RequireComponent(typeof(AudioSource))]
+public sealed class WeaponController : MonoBehaviour
 {
-    [Header("Weapon GameObjects")]
-    public GameObject bulletSpawnPoint;
-    public GameObject pickupsSpawnPoint;
-    public GameObject bulletPrefab;
-    public GameObject ammoPrefab;
+    [Header("Weapon Objects")]
+    [SerializeField] private GameObject bulletSpawnPoint;
+    [SerializeField] private GameObject pickupsSpawnPoint;
+    [SerializeField] private GameObject bulletPrefab;
+    [SerializeField] private GameObject ammoPrefab;
 
     [Header("Fire Settings")]
-    public float bulletSpeed = 500f;
-    public float fireRate = 0.2f;
-    public AudioClip shootSound; // The sound to play when the player fires
-    public float shootVolume = 0.5f; // The volume at which to play the shoot sound
-
-    private float lastShotTime;
-    private bool isFiring;
-    private bool isSingleFiring;
+    [SerializeField, Min(0f)] private float bulletSpeed = 500f;
+    [SerializeField, Min(0.01f)] private float fireRate = 0.2f;
+    [SerializeField] private AudioClip shootSound;
+    [SerializeField, Range(0f, 1f)] private float shootVolume = 0.5f;
 
     [Header("Fire Modes")]
-    public bool isAutoAvailible = false;
-    public bool isBurstAvailible = false;
-    public int burstSize = 3;
-    public float burstInterval = 0.5f;
-    public FireMode fireMode = FireMode.Auto;
+    [SerializeField] private bool isAutoAvailible;
+    [SerializeField] private bool isBurstAvailible;
+    [SerializeField, Min(1)] private int burstSize = 3;
+    [SerializeField, Min(0f)] private float burstInterval = 0.5f;
+    [SerializeField] private FireMode fireMode = FireMode.Auto;
 
     [Header("Reloading")]
-    public int currentAmmo = 0;
-    public float reloadTime = 1.0f;
-    //Add Sound
-    [SerializeField]
-    private bool isReloading = false;
+    [SerializeField, Min(0)] private int currentAmmo;
+    [SerializeField, Min(0.01f)] private float reloadTime = 1f;
+    [SerializeField] private bool isReloading;
 
     [Header("Recoil")]
-    public float recoilForce = 5f;
-    public float maxRecoilAmount = 2f;
-    public float recoilIncreaseAmount = 0.1f;
-    public float recoilDecreaseAmount = 1f;
-    public float recoilVerticalPlus = 1.5f;
-    public float recoilVerticalMinus = 0.5f;
-
-    private float currentRecoilAmount;
+    [SerializeField, Min(0f)] private float recoilForce = 5f;
+    [SerializeField, Min(0f)] private float maxRecoilAmount = 2f;
+    [SerializeField, Min(0f)] private float recoilIncreaseAmount = 0.1f;
+    [SerializeField, Min(0f)] private float recoilDecreaseAmount = 1f;
+    [SerializeField, Min(0f)] private float recoilVerticalPlus = 1.5f;
+    [SerializeField, Min(0f)] private float recoilVerticalMinus = 0.5f;
 
     [Header("Ammo Drop")]
-    public float ammoImpulseSpeed = 10.0f; // The speed at which the ammo pickups are initially propelled
-    public float ammoImpulseDuration = 1.0f; // The duration over which the initial impulse force is attenuated
-    public float maxRotation = 45.0f; // The maximum rotation to apply to the ammo pickup
-    public float maxOffset = 0.1f; // The maximum offset to apply to the ammo pickup
-    public AudioClip ammoDropSound; // New field for the ammo drop sound
-    public float ammoVolume = 0.3f; // The volume at which to play the shoot sound
-
-    private bool isLeftRotated = false;
+    [SerializeField, Min(0f)] private float ammoImpulseSpeed = 10f;
+    [SerializeField, Min(0f)] private float ammoImpulseDuration = 1f;
+    [SerializeField, Range(0f, 180f)] private float maxRotation = 45f;
+    [SerializeField, Min(0f)] private float maxOffset = 0.1f;
+    [SerializeField] private AudioClip ammoDropSound;
+    [SerializeField, Range(0f, 1f)] private float ammoVolume = 0.3f;
 
     [Header("NPC")]
-    public bool isNPCControlled = false;
-    public float npcTargetOffsetY = -0.5f;
-    public Transform npcTarget;
-    public Transform objectTarget;
+    [SerializeField] private bool isNPCControlled;
+    [SerializeField] private float npcTargetOffsetY = -0.5f;
+    [SerializeField] private Transform npcTarget;
+    [SerializeField] private Transform objectTarget;
 
-    [Header("Controll")]
-    public float rotationSpeed = 10f; // The speed of rotation, in degrees per second.
+    [Header("Control")]
+    [SerializeField, Min(0f)] private float rotationSpeed = 10f;
 
-    private Vector3 mousePosition; // The position of the mouse in world space.
-
-    [Header("Others")]
-    //Others
-    private AudioSource audioSource; // The AudioSource component to play the shoot sound
+    private AudioSource audioSource;
     private GlobalSystem globalSystem;
     private UIAmmoSystem ammoSystem;
-    private Animator weapongAnimator;
+    private Animator weaponAnimator;
+    private Camera mainCamera;
+    private Weapon weapon;
+    private Transform bulletSpawnTransform;
+    private Transform pickupsSpawnTransform;
 
-    public Weapon weapon;
+    private float currentRecoilAmount;
+    private float nextShotTime;
+    private bool isFiring;
+    private bool isSingleFiring;
+    private bool isLeftRotated;
 
     public enum FireMode
     {
@@ -82,19 +77,40 @@ public class WeaponController : MonoBehaviour
         Single
     }
 
+    public Weapon WeaponData => weapon;
+    public int CurrentAmmo => currentAmmo;
+    public bool SupportsAuto => isAutoAvailible;
+    public bool SupportsBurst => isBurstAvailible;
+    public bool IsReloading => isReloading;
+
+    public FireMode CurrentFireMode
+    {
+        get => fireMode;
+        set => fireMode = value;
+    }
+
+    public float RotationSpeed
+    {
+        get => rotationSpeed;
+        set => rotationSpeed = Mathf.Max(0f, value);
+    }
+
     private void Awake()
     {
         weapon = GetComponent<Weapon>();
+        audioSource = GetComponent<AudioSource>();
+        weaponAnimator = GetComponentInParent<Animator>();
+        mainCamera = Camera.main;
+        bulletSpawnTransform = bulletSpawnPoint != null ? bulletSpawnPoint.transform : null;
+        pickupsSpawnTransform = pickupsSpawnPoint != null ? pickupsSpawnPoint.transform : null;
+        isNPCControlled = GetComponentInParent<NPCController>() != null;
     }
 
-    void Start()
+    private void Start()
     {
-        audioSource = GetComponent<AudioSource>();
-        isNPCControlled = GetComponentInParent<NPCController>() != null;
-        globalSystem = GameObject.FindGameObjectWithTag("System").GetComponent<GlobalSystem>();
-        ammoSystem = globalSystem.UIAmmoSystem;
-        currentAmmo = weapon.weaponAmmoMax;
-        weapongAnimator = GetComponentInParent<Animator>();
+        globalSystem = GlobalSystem.Instance;
+        ammoSystem = globalSystem != null ? globalSystem.AmmoUI : null;
+        currentAmmo = weapon.MaximumAmmo;
         isReloading = false;
     }
 
@@ -102,90 +118,155 @@ public class WeaponController : MonoBehaviour
     {
         isFiring = false;
         isSingleFiring = false;
+        nextShotTime = 0f;
+    }
+
+    private void OnDisable()
+    {
+        StopAllCoroutines();
+        isFiring = false;
+        isReloading = false;
     }
 
     private void Update()
     {
         if (!isNPCControlled)
         {
-            if (Input.GetMouseButton(0))
-            {
-                FireWithModes();
-            } else if (Input.GetButtonUp("Fire1"))
-            {
-                isSingleFiring = false;
-            }
-            if (Input.GetKeyDown(KeyCode.B))
-            {
-                FireModeChange();
-            }
-            if (Input.GetKeyDown(KeyCode.R))
-            {
-                Reload();
-            }
+            HandlePlayerInput();
         }
-        RecoilDecrease();
+
+        UpdateAim();
+        currentRecoilAmount = Mathf.MoveTowards(
+            currentRecoilAmount,
+            0f,
+            recoilDecreaseAmount * Time.deltaTime);
+    }
+
+    private void HandlePlayerInput()
+    {
+        if (Input.GetMouseButton(0))
+        {
+            FireWithModes();
+        }
+
+        if (Input.GetButtonUp("Fire1"))
+        {
+            isSingleFiring = false;
+        }
+
+        if (Input.GetKeyDown(KeyCode.B))
+        {
+            FireModeChange();
+        }
+
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            Reload();
+        }
+    }
+
+    private void UpdateAim()
+    {
+        if (isNPCControlled)
+        {
+            if (npcTarget != null)
+            {
+                float targetAngle = GetTargetAngle(npcTarget);
+                ChangeDirectWeaponByAngle(targetAngle);
+                RotateWeaponWithRecoil(targetAngle);
+            }
+            else if (objectTarget != null)
+            {
+                float targetAngle = GetTargetAngle(objectTarget);
+                ChangeDirectWeaponByAngle(targetAngle);
+                RotateWeapon(targetAngle);
+            }
+            else
+            {
+                RotateWeapon(isLeftRotated ? 180f : 0f);
+            }
+
+            return;
+        }
+
+        Vector3 direction = CalculateDirectionForPlayerMouse();
+        if (direction.sqrMagnitude <= Mathf.Epsilon)
+        {
+            return;
+        }
+
+        float playerTargetAngle = CalculateTargetAngle(direction);
+        ChangeDirectWeaponByAngle(playerTargetAngle);
+        RotateWeaponWithRecoil(playerTargetAngle);
     }
 
     public void FireWithModes()
     {
+        if (isReloading || Time.time < nextShotTime)
+        {
+            return;
+        }
+
         switch (fireMode)
         {
             case FireMode.Auto:
-                if (!isFiring)
-                {
-                    StartCoroutine(FireAuto());
-                }
+                TryFireSingleRound();
                 break;
+
             case FireMode.Burst:
                 if (!isFiring)
                 {
-                    StartCoroutine(FireBurst());
+                    StartCoroutine(FireBurstRoutine());
                 }
                 break;
+
             case FireMode.Single:
-                if (!isFiring && !isSingleFiring)
+                if (!isSingleFiring)
                 {
-                    StartCoroutine(FireSingleShot());
+                    isSingleFiring = true;
+                    TryFireSingleRound();
+
+                    if (isNPCControlled)
+                    {
+                        isSingleFiring = false;
+                    }
                 }
                 break;
         }
     }
 
-    IEnumerator FireSingleShot()
+    private bool TryFireSingleRound()
     {
-        isFiring = true;
-        isSingleFiring = true;
-        Fire();
-        yield return new WaitForSeconds(fireRate);
-        isFiring = false;
-        if (isNPCControlled)
+        if (!TryFireRound())
         {
-            isSingleFiring = false;
+            return false;
         }
+
+        nextShotTime = Time.time + fireRate;
+        return true;
     }
 
-    IEnumerator FireBurst()
+    private IEnumerator FireBurstRoutine()
     {
         isFiring = true;
-        int shotsFired = 0;
 
-        while (shotsFired < burstSize)
+        for (int shot = 0; shot < burstSize; shot++)
         {
-            Fire();
-            shotsFired++;
+            if (isReloading || currentAmmo <= 0)
+            {
+                break;
+            }
+
+            TryFireRound();
+            nextShotTime = Time.time + fireRate;
             yield return new WaitForSeconds(fireRate);
         }
 
-        yield return new WaitForSeconds(burstInterval);
-        isFiring = false;
-    }
+        if (burstInterval > 0f)
+        {
+            yield return new WaitForSeconds(burstInterval);
+        }
 
-    IEnumerator FireAuto()
-    {
-        isFiring = true;
-        Fire();
-        yield return new WaitForSeconds(fireRate);
         isFiring = false;
     }
 
@@ -196,16 +277,11 @@ public class WeaponController : MonoBehaviour
             case FireMode.Auto:
                 fireMode = FireMode.Single;
                 break;
+
             case FireMode.Burst:
-                if (isAutoAvailible)
-                {
-                    fireMode = FireMode.Auto;
-                }
-                else
-                {
-                    fireMode = FireMode.Single;
-                }
+                fireMode = isAutoAvailible ? FireMode.Auto : FireMode.Single;
                 break;
+
             case FireMode.Single:
                 if (isBurstAvailible)
                 {
@@ -219,82 +295,143 @@ public class WeaponController : MonoBehaviour
         }
     }
 
-    private void FixedUpdate()
+    public void Fire()
     {
+        TryFireRound();
+    }
+
+    private bool TryFireRound()
+    {
+        if (currentAmmo <= 0 || isReloading || bulletPrefab == null || bulletSpawnTransform == null)
+        {
+            return false;
+        }
+
+        if (shootSound != null)
+        {
+            audioSource.PlayOneShot(shootSound, shootVolume);
+        }
+
+        currentAmmo--;
         if (!isNPCControlled)
         {
-            Vector3 direction = CalculateDirectionForPlayerMouse();
-
-            float targetAngle = CalculateTargetAngle(direction);
-
-            ChangeDirectWeaponByAngle(targetAngle);
-            RotateWeaponWithRecoil(targetAngle);
+            ammoSystem?.PopAmmo(currentAmmo, weapon.MaximumAmmo);
         }
-        else
+
+        GameObject bullet = Instantiate(
+            bulletPrefab,
+            bulletSpawnTransform.position,
+            transform.rotation);
+
+        if (bullet.TryGetComponent(out Rigidbody2D bulletBody))
         {
-            if (npcTarget != null)
-            {
-                float targetAngle = GetTargetAngle(npcTarget);
+            bulletBody.AddForce(transform.right * bulletSpeed);
+        }
 
-                ChangeDirectWeaponByAngle(targetAngle);
-                RotateWeaponWithRecoil(targetAngle);
-            }
-            else if(objectTarget != null)
-            {
-                float targetAngle = GetTargetAngle(objectTarget);
+        currentRecoilAmount = Mathf.Min(
+            maxRecoilAmount,
+            currentRecoilAmount + recoilIncreaseAmount + recoilForce * 0.001f);
 
-                ChangeDirectWeaponByAngle(targetAngle);
-                rotateWeaponToDirectionWithoutZ();
-            }
-            else
-            {
-                rotateWeaponToDirectionWithoutZ();
-            }
+        SpawnAmmoDrop();
+        return true;
+    }
+
+    private void SpawnAmmoDrop()
+    {
+        if (ammoPrefab == null || pickupsSpawnTransform == null)
+        {
+            return;
+        }
+
+        globalSystem ??= GlobalSystem.Instance;
+
+        Vector3 position = pickupsSpawnTransform.position;
+        position.z += 3f;
+        position += transform.up * Random.Range(-maxOffset, maxOffset);
+
+        Quaternion rotation = Quaternion.Euler(
+            0f,
+            0f,
+            Random.Range(-maxRotation, maxRotation));
+
+        GameObject ammoDrop = Instantiate(
+            ammoPrefab,
+            position,
+            rotation,
+            globalSystem != null ? globalSystem.RuntimeContainer : null);
+
+        if (ammoDrop.TryGetComponent(out Rigidbody2D body))
+        {
+            body.AddForce(-transform.up * ammoImpulseSpeed, ForceMode2D.Impulse);
+            StartCoroutine(Tools.AttenuateVelocity(body, ammoImpulseDuration));
+        }
+
+        if (ammoDropSound != null)
+        {
+            audioSource.PlayOneShot(ammoDropSound, ammoVolume);
         }
     }
 
-    public void rotateWeaponToDirectionWithoutZ()
+    public void Reload()
     {
-        if (transform.rotation.eulerAngles.z != (isLeftRotated ? 180 : 0))
+        if (isReloading || currentAmmo >= weapon.MaximumAmmo)
         {
-            RotateWeapon(isLeftRotated ? 180 : 0);
+            return;
         }
+
+        StartCoroutine(ReloadRoutine());
+    }
+
+    private IEnumerator ReloadRoutine()
+    {
+        isReloading = true;
+
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.enabled = true;
+            weaponAnimator.SetFloat("ReloadSpeed", 1f / Mathf.Max(0.01f, reloadTime));
+            weaponAnimator.SetTrigger("Reload");
+        }
+
+        yield return new WaitForSeconds(reloadTime);
+
+        currentAmmo = weapon.MaximumAmmo;
+        if (!isNPCControlled)
+        {
+            ammoSystem?.ReloadAmmo(weapon.MaximumAmmo);
+        }
+
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.enabled = false;
+        }
+
+        isReloading = false;
+    }
+
+    public void WeaponChanged()
+    {
+        StopAllCoroutines();
+        isReloading = false;
+        isFiring = false;
+        isSingleFiring = false;
+    }
+
+    public void SetNPCTarget(Transform target)
+    {
+        npcTarget = target;
+    }
+
+    public void SetObjectTarget(Transform target)
+    {
+        objectTarget = target;
     }
 
     public float GetTargetAngle(Transform target)
     {
         Vector3 direction = CalculateDirectionForObjects(target);
-        direction = new Vector3(direction.x, direction.y + npcTargetOffsetY, direction.z);
+        direction.y += npcTargetOffsetY;
         return CalculateTargetAngle(direction);
-    }
-
-    public void RecoilDecrease()
-    {
-        float timeSinceShot = Time.time - lastShotTime;
-        float recoilDecrease = recoilDecreaseAmount * timeSinceShot;
-        currentRecoilAmount = Mathf.Max(0f, currentRecoilAmount - recoilDecrease);
-    }
-
-    public void RotateWeapon(float targetAngle)
-    {
-        transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0f, 0f, targetAngle), rotationSpeed * Time.deltaTime); ;
-    }
-
-    public void RotateWeaponWithRecoil(float targetAngle)
-    {
-        // Smoothly rotate towards the target angle over time.
-        float recoil = Random.Range(-currentRecoilAmount * (!isLeftRotated ? recoilVerticalMinus : recoilVerticalPlus), currentRecoilAmount * (!isLeftRotated ? recoilVerticalPlus : recoilVerticalMinus));
-
-        transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0f, 0f, targetAngle + recoil), rotationSpeed * Time.deltaTime); ;
-    }
-
-    public void ChangeDirectWeaponByAngle(float targetAngle)
-    {
-        if (((targetAngle > 90 || targetAngle < -90) && transform.localScale.y > 0) || targetAngle < 90 && targetAngle > -90 && transform.localScale.y < 0)
-        {
-            transform.localScale = new Vector3(transform.localScale.x, -transform.localScale.y, transform.localScale.z);
-            isLeftRotated = transform.localScale.y < 0;
-        }
     }
 
     public float CalculateTargetAngle(Vector3 target)
@@ -304,115 +441,73 @@ public class WeaponController : MonoBehaviour
 
     public Vector3 CalculateDirectionForPlayerMouse()
     {
-        var mouse_pos = Input.mousePosition;
-        var object_pos = Camera.main.WorldToScreenPoint(transform.position);
-        mouse_pos.x = mouse_pos.x - object_pos.x;
-        mouse_pos.y = mouse_pos.y - object_pos.y;
-
-        // Get the position of the mouse in world space.
-        mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        mousePosition.z = 0f; // Make sure the z-coordinate is zero.
-
-        // Calculate the target rotation angle in degrees.
-        Vector3 direction = mousePosition - transform.position;
-        return direction;
-    }
-
-    public Vector3 CalculateDirectionForObjects(Transform objectTo)
-    {
-        Vector3 object1Position = transform.position;
-        Vector3 object2Position = objectTo.position;
-
-        // Calculate the direction vector from the root object to object2.
-        Vector3 direction = object2Position - object1Position;
-
-        return direction;
-    }
-
-    public void Fire()
-    {
-        if (currentAmmo > 0 && !isReloading)
+        if (mainCamera == null)
         {
-            audioSource.PlayOneShot(shootSound, shootVolume);
-
-            //CountAmmo
-            currentAmmo--;
-            if (!isNPCControlled)
-            {
-                ammoSystem.PopAmmo(currentAmmo, weapon.weaponAmmoMax);
-            }
-
-            Vector3 mousePos = Input.mousePosition;
-            mousePos.z = Camera.main.nearClipPlane;
-            Vector3 worldPos = Camera.main.ScreenToWorldPoint(mousePos);
-            Vector3 direction = worldPos - transform.position;
-
-            GameObject bullet = Instantiate(bulletPrefab, bulletSpawnPoint.transform.position, transform.rotation);
-            Rigidbody2D rb2d = bullet.GetComponent<Rigidbody2D>();
-
-            rb2d.AddForce(transform.right * bulletSpeed);
-
-            currentRecoilAmount += recoilIncreaseAmount;
-            currentRecoilAmount = Mathf.Clamp(currentRecoilAmount, 0f, maxRecoilAmount);
-
-            Vector3 ammoDropPosition = pickupsSpawnPoint.transform.position + new Vector3(0, 0, 3);
-            Quaternion ammoDropRotation = Quaternion.Euler(0.0f, 0.0f, Random.Range(-maxRotation, maxRotation));
-            ammoDropPosition += transform.up * Random.Range(-maxOffset, maxOffset);
-            GameObject ammoDrop = Instantiate(ammoPrefab, ammoDropPosition, ammoDropRotation, globalSystem.garbadge);
-            Vector2 forceDirection = -transform.up * ammoImpulseSpeed;
-            ammoDrop.GetComponent<Rigidbody2D>().AddForce(forceDirection, ForceMode2D.Impulse);
-            StartCoroutine(Tools.AttenuateAmmoImpulse(ammoDrop.GetComponent<Rigidbody2D>(), ammoImpulseDuration));
-
-            AudioSource.PlayClipAtPoint(ammoDropSound, ammoDrop.transform.position, ammoVolume);
-
-            lastShotTime = Time.time;
-        }
-    }
-
-    public void SetNPCTarget(Transform target)
-    {
-        npcTarget = target != null ? target.transform : null;
-    }
-    public void SetObjectTarget(Transform target)
-    {
-        objectTarget = target != null ? target.transform : null;
-    }
-
-    public void Reload()
-    {
-        if (!isReloading)
-        {
-            isReloading = true;
-            StartCoroutine(ReloadCoroutine());
-        }
-    }
-
-    private IEnumerator ReloadCoroutine()
-    {
-        // Play the reloading animation here
-        if (weapongAnimator != null)
-        {
-            weapongAnimator.enabled = true;
-            weapongAnimator.SetFloat("ReloadSpeed", 1 / reloadTime);
-            weapongAnimator.SetTrigger("Reload");
+            mainCamera = Camera.main;
         }
 
-        yield return new WaitForSeconds(reloadTime); // Wait for the duration of the reloading animation
-
-        // Execute the actual reload logic here
-
-        weapongAnimator.enabled = false;
-        currentAmmo = weapon.weaponAmmoMax;
-        if (!isNPCControlled) // Show UI only for Player
+        if (mainCamera == null)
         {
-            ammoSystem.ReloadAmmo(weapon.weaponAmmoMax);
+            return Vector3.zero;
         }
-        
-        isReloading = false; // Reset the reloading flag
+
+        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        mousePosition.z = transform.position.z;
+        return mousePosition - transform.position;
     }
 
-    public void WeaponChanged()
+    public Vector3 CalculateDirectionForObjects(Transform target)
     {
-        isReloading = false;
+        return target != null ? target.position - transform.position : Vector3.zero;
+    }
+
+    public void ChangeDirectWeaponByAngle(float targetAngle)
+    {
+        bool shouldFaceLeft = targetAngle > 90f || targetAngle < -90f;
+
+        if (shouldFaceLeft == isLeftRotated)
+        {
+            return;
+        }
+
+        Vector3 scale = transform.localScale;
+        scale.y = -scale.y;
+        transform.localScale = scale;
+        isLeftRotated = shouldFaceLeft;
+    }
+
+    public void RotateWeapon(float targetAngle)
+    {
+        Quaternion targetRotation = Quaternion.Euler(0f, 0f, targetAngle);
+        float interpolation = 1f - Mathf.Exp(-rotationSpeed * Time.deltaTime);
+        transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, interpolation);
+    }
+
+    public void RotateWeaponWithRecoil(float targetAngle)
+    {
+        float min = -currentRecoilAmount * (isLeftRotated ? recoilVerticalPlus : recoilVerticalMinus);
+        float max = currentRecoilAmount * (isLeftRotated ? recoilVerticalMinus : recoilVerticalPlus);
+        RotateWeapon(targetAngle + Random.Range(min, max));
+    }
+
+    public void RecoilDecrease()
+    {
+        currentRecoilAmount = Mathf.MoveTowards(
+            currentRecoilAmount,
+            0f,
+            recoilDecreaseAmount * Time.deltaTime);
+    }
+
+    public void rotateWeaponToDirectionWithoutZ()
+    {
+        RotateWeapon(isLeftRotated ? 180f : 0f);
+    }
+
+    private void OnValidate()
+    {
+        fireRate = Mathf.Max(0.01f, fireRate);
+        reloadTime = Mathf.Max(0.01f, reloadTime);
+        burstSize = Mathf.Max(1, burstSize);
+        rotationSpeed = Mathf.Max(0f, rotationSpeed);
     }
 }

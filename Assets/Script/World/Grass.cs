@@ -1,29 +1,45 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
-public class Grass : MonoBehaviour
+[RequireComponent(typeof(SpriteRenderer))]
+public sealed class Grass : MonoBehaviour
 {
-    private int defaultSortingOrder = 0;
+    private int defaultSortingOrder;
     private SpriteRenderer spriteRenderer;
 
-    public void Start()
+    private void Awake()
     {
-        spriteRenderer = GetComponent<SpriteRenderer>();
+        CacheRenderer();
+        defaultSortingOrder = spriteRenderer.sortingOrder;
     }
 
-    public void setSortingFromSource()
+    public void SetSortingFromSource()
     {
-        defaultSortingOrder = GetComponent<SpriteRenderer>().sortingOrder;
+        CacheRenderer();
+        defaultSortingOrder = spriteRenderer.sortingOrder;
     }
 
-    public void setSortOrder(int sortSet)
+    public void SetSortOrder(int sortingOrder)
     {
-        spriteRenderer.sortingOrder = sortSet;
+        CacheRenderer();
+        spriteRenderer.sortingOrder = sortingOrder;
     }
 
-    public void setDefaultOrder()
+    public void SetDefaultOrder()
     {
+        CacheRenderer();
         spriteRenderer.sortingOrder = defaultSortingOrder;
     }
+
+    private void CacheRenderer()
+    {
+        if (spriteRenderer == null)
+        {
+            spriteRenderer = GetComponent<SpriteRenderer>();
+        }
+    }
+
+    // Backwards-compatible method names.
+    public void setSortingFromSource() => SetSortingFromSource();
+    public void setSortOrder(int sortingOrder) => SetSortOrder(sortingOrder);
+    public void setDefaultOrder() => SetDefaultOrder();
 }

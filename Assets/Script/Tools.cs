@@ -1,20 +1,50 @@
-﻿using System.Collections;
+using System.Collections;
 using UnityEngine;
 
 namespace Assets.Script
 {
-    public class Tools : MonoBehaviour
+    public static class Tools
     {
-        public static IEnumerator AttenuateAmmoImpulse(Rigidbody2D ammoRigidbody, float duration)
+        public static IEnumerator AttenuateVelocity(Rigidbody2D body, float duration)
         {
-            float startTime = Time.time;
-            while (Time.time - startTime < duration)
+            if (body == null)
             {
-                float attenuation = 1.0f - (Time.time - startTime) / duration;
-                ammoRigidbody.velocity *= attenuation;
+                yield break;
+            }
+
+            if (duration <= 0f)
+            {
+                body.velocity = Vector2.zero;
+                body.angularVelocity = 0f;
+                yield break;
+            }
+
+            Vector2 initialVelocity = body.velocity;
+            float initialAngularVelocity = body.angularVelocity;
+            float elapsed = 0f;
+
+            while (body != null && elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = Mathf.Clamp01(elapsed / duration);
+                float attenuation = 1f - progress;
+
+                body.velocity = initialVelocity * attenuation;
+                body.angularVelocity = initialAngularVelocity * attenuation;
                 yield return null;
             }
-            Destroy(ammoRigidbody);
+
+            if (body != null)
+            {
+                body.velocity = Vector2.zero;
+                body.angularVelocity = 0f;
+            }
+        }
+
+        // Backwards-compatible API for existing callers.
+        public static IEnumerator AttenuateAmmoImpulse(Rigidbody2D body, float duration)
+        {
+            return AttenuateVelocity(body, duration);
         }
     }
 }
