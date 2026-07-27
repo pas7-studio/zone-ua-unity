@@ -14,7 +14,7 @@ namespace ZoneUA.EditorValidation
     {
         public const string ScenesRoot = "Assets/_ZoneUA/Scenes";
         public const string BootstrapScenePath = ScenesRoot + "/Bootstrap/Bootstrap.unity";
-        public const string ProductionScenePath = ScenesRoot + "/Production/Production.unity";
+        public const string ProductionScenePath = ScenesRoot + "/Production/MainScene.unity";
         public const string DevelopmentScenePath = ScenesRoot + "/Development/Development.unity";
         public const string TestScenePath = ScenesRoot + "/Tests/Tests.unity";
         public const string CatalogPath = "Assets/_ZoneUA/Settings/SceneCatalog.asset";
@@ -193,7 +193,9 @@ namespace ZoneUA.EditorValidation
             };
 
             var retained = EditorBuildSettings.scenes
-                .Where(scene => desired.All(item => !string.Equals(item.path, scene.path, StringComparison.OrdinalIgnoreCase)))
+                .Where(scene => desired.All(item => !string.Equals(item.path, scene.path, StringComparison.OrdinalIgnoreCase)) &&
+                                !string.Equals(scene.path, "Assets/_ZoneUA/Scenes/Production/Production.unity", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(scene.path, "Assets/Scenes/SampleScene.unity", StringComparison.OrdinalIgnoreCase))
                 .ToList();
             retained.InsertRange(0, desired);
             EditorBuildSettings.scenes = retained.ToArray();

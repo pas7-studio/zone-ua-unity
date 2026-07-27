@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: SceneCatalog
   m_EditorClassIdentifier: ZoneUA.SceneManagement::ZoneUA.SceneManagement.SceneCatalog
   bootstrapScene: Bootstrap
-  initialProductionScene: Production
+  initialProductionScene: MainScene
   loadingScene: 
   developmentScenes:
   - Development

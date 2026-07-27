@@ -119,18 +119,23 @@ public sealed class SceneBootstrapper : MonoBehaviour
             yield break;
         }
 
-        // Unity can report the additive scene as loaded one frame before it can
-        // become the active scene. Retry once after yielding to the player loop
-        // so bootstrap never leaves gameplay running in the empty bootstrap scene.
-        yield return null;
-        if (!SceneManager.SetActiveScene(target))
+        // Unity can report the scene as loaded a few frames before it can
+        // become active. Keep bootstrap alive while the scene settles.
+        bool becameActive = false;
+        for (int attempt = 0; attempt < 8; attempt++)
         {
-            yield return null;
-            if (!SceneManager.SetActiveScene(target))
+            if (SceneManager.GetActiveScene() == target || SceneManager.SetActiveScene(target))
             {
-                FailTransition($"Scene '{targetScene}' loaded but could not become active.");
-                yield break;
+                becameActive = true;
+                break;
             }
+            yield return null;
+        }
+
+        if (!becameActive)
+        {
+            FailTransition($"Scene '{targetScene}' loaded but could not become active.");
+            yield break;
         }
         activeGameplayScene = targetScene;
         SceneActivated?.Invoke(targetScene);

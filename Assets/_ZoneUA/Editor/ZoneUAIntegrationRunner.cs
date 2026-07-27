@@ -4,6 +4,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using ZoneUA.SceneManagement;
 
 namespace ZoneUA.EditorValidation
 {
@@ -12,6 +13,58 @@ namespace ZoneUA.EditorValidation
         private const string SourceScenePath = "Assets/Scenes/SampleScene.unity";
         private const string ProductionScenePath = ZoneUASceneArchitectureTools.ProductionScenePath;
         private const string InputActionsPath = "Assets/_ZoneUA/Input/ZoneUAInput.inputactions";
+
+        [MenuItem("Zone UA/Integration/Build Main Game Scene", priority = 0)]
+        public static void BuildMainGameScene()
+        {
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            try
+            {
+                InstantiatePrefab("Assets/Prefabs/World/MapGeneratorTest.prefab", "World_Generated", Vector3.zero, scene);
+                GameObject player = InstantiatePrefab("Assets/Prefabs/MainPlayer.prefab", "MainPlayer", new Vector3(0f, 0f, 0f), scene);
+                GameObject camera = InstantiatePrefab("Assets/Prefabs/Cameras/Main Camera.prefab", "Main Camera", new Vector3(0f, 0f, -10f), scene);
+                GameObject ui = InstantiatePrefab("Assets/Prefabs/UI/UICanvas.prefab", "UI", Vector3.zero, scene);
+                InstantiatePrefab("Assets/Prefabs/World/World Sound.prefab", "World Sound", Vector3.zero, scene);
+                RemoveChildrenByComponent(ui, "EventSystem");
+                InstantiatePrefab("Assets/Prefabs/NPC/Scientiest_Human.prefab", "Scientiest_Human", new Vector3(4f, 0f, 0f), scene);
+                InstantiatePrefab("Assets/Prefabs/NPC/Solder_Human.prefab", "Solder_Human", new Vector3(-4f, 0f, 0f), scene);
+
+                GameObject lighting = new GameObject("Main Light");
+                SceneManager.MoveGameObjectToScene(lighting, scene);
+                Light light = lighting.AddComponent<Light>();
+                light.type = LightType.Directional;
+                light.intensity = 0.8f;
+                lighting.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+                GameObject eventSystem = new GameObject("EventSystem");
+                SceneManager.MoveGameObjectToScene(eventSystem, scene);
+                AddComponent(eventSystem, "EventSystem");
+                AddComponent(eventSystem, "InputSystemUIInputModule");
+
+                Component cameraFollow = FindComponent(camera, "CameraFollow");
+                SetObject(cameraFollow, "target", player.transform);
+
+                GameObject services = new GameObject("ZoneUA_Persistence");
+                SceneManager.MoveGameObjectToScene(services, scene);
+                Component save = AddComponent(services, "SaveGameCoordinator");
+                SetObject(save, "playerRoot", player.transform);
+                SetObject(save, "playerHealth", FindComponent(player, "Health"));
+                SetObject(save, "weaponSwitcher", FindComponent(player, "WeaponSwitcher"));
+                SetFloat(save, "autosaveIntervalSeconds", 0f);
+
+                EditorSceneManager.MarkSceneDirty(scene);
+                EditorSceneManager.SaveScene(scene, ProductionScenePath);
+                ConfigureBuildSettingsForMainScene();
+                UpdateCatalogToMainScene();
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+                Debug.Log($"Zone UA main game scene built: {ProductionScenePath}");
+            }
+            finally
+            {
+                if (scene.IsValid() && scene.isLoaded) EditorSceneManager.CloseScene(scene, true);
+            }
+        }
 
         [MenuItem("Zone UA/Integration/Integrate Production Scene", priority = 1)]
         public static void IntegrateProductionScene()
@@ -90,6 +143,12 @@ namespace ZoneUA.EditorValidation
                 SetObject(input, "actions", actions);
                 SetObject(input, "characterController", FindComponent(root, "CharacterCustomController"));
                 SetObject(input, "weaponSwitcher", FindComponent(root, "WeaponSwitcher"));
+                AddComponent(root, "PersistentIdentity");
+                AddComponent(root, "TransformSaveParticipant");
+                AddComponent(root, "HealthSaveParticipant");
+                Component inventory = AddComponent(root, "InventoryComponent");
+                SetInt(inventory, "capacity", 24);
+                AddComponent(root, "InventorySaveParticipant");
                 PrefabUtility.SaveAsPrefabAsset(root, path);
             }
             finally
@@ -117,10 +176,58 @@ namespace ZoneUA.EditorValidation
 
         private static Type FindType(string typeName)
         {
-            string[] candidates = { typeName, "ZoneUA.Persistence." + typeName, "ZoneUA.Inventory." + typeName };
+            string[] candidates =
+            {
+                typeName,
+                "ZoneUA.Persistence." + typeName,
+                "ZoneUA.Inventory." + typeName,
+                "UnityEngine.EventSystems." + typeName,
+                "UnityEngine.InputSystem.UI." + typeName
+            };
             return AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(assembly => candidates.Select(candidate => assembly.GetType(candidate, false)))
                 .FirstOrDefault(type => type != null);
+        }
+
+        private static GameObject InstantiatePrefab(string path, string name, Vector3 position, Scene scene)
+        {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab == null) throw new InvalidOperationException($"Missing prefab: {path}");
+            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
+            instance.name = name;
+            instance.transform.position = position;
+            return instance;
+        }
+
+        private static void RemoveChildrenByComponent(GameObject root, string componentTypeName)
+        {
+            foreach (Component component in root.GetComponentsInChildren<Component>(true))
+            {
+                if (component == null || component.gameObject == root || component.GetType().Name != componentTypeName) continue;
+                UnityEngine.Object.DestroyImmediate(component.gameObject);
+            }
+        }
+
+        private static void ConfigureBuildSettingsForMainScene()
+        {
+            var scenes = EditorBuildSettings.scenes.ToList();
+            scenes.RemoveAll(scene =>
+                string.Equals(scene.path, ProductionScenePath, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(scene.path, "Assets/_ZoneUA/Scenes/Production/Production.unity", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(scene.path, "Assets/Scenes/SampleScene.unity", StringComparison.OrdinalIgnoreCase));
+            scenes.Insert(1, new EditorBuildSettingsScene(ProductionScenePath, true));
+            EditorBuildSettings.scenes = scenes.ToArray();
+        }
+
+        private static void UpdateCatalogToMainScene()
+        {
+            SceneCatalog catalog = AssetDatabase.LoadAssetAtPath<SceneCatalog>(ZoneUASceneArchitectureTools.CatalogPath);
+            if (catalog == null) return;
+            SerializedObject serialized = new SerializedObject(catalog);
+            SerializedProperty property = serialized.FindProperty("initialProductionScene");
+            if (property != null) property.stringValue = "MainScene";
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(catalog);
         }
 
         private static void SetObject(UnityEngine.Object target, string propertyName, UnityEngine.Object value)

@@ -202,6 +202,11 @@ GameObject:
   - component: {fileID: 9145319070208854314}
   - component: {fileID: 6580664484548666706}
   - component: {fileID: 3820481133796445175}
+  - component: {fileID: 5952975893147737734}
+  - component: {fileID: 5544036216458538703}
+  - component: {fileID: 905044588466462395}
+  - component: {fileID: 6893902554880515573}
+  - component: {fileID: 6150986370276931221}
   m_Layer: 0
   m_Name: MainPlayer
   m_TagString: Player
@@ -420,6 +425,73 @@ MonoBehaviour:
   weaponSwitcher: {fileID: 616317034050320149}
   weaponCommandSource: {fileID: 0}
   pointerLookIsScreenPosition: 1
+--- !u!114 &5952975893147737734
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6801975350734993990}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 606ab490b65e4372a2e0d00cd0da7de6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ZoneUA.Persistence::ZoneUA.Persistence.PersistentIdentity
+  objectId: 
+  prefabId: 
+  runtimeSpawned: 0
+--- !u!114 &5544036216458538703
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6801975350734993990}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 227064758f0a4c978ec7b9035ceef642, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TransformSaveParticipant
+  persistScale: 0
+  persistActiveState: 1
+--- !u!114 &905044588466462395
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6801975350734993990}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d26e9bfca0d44cdb8045f5ee9f3d9ca2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HealthSaveParticipant
+--- !u!114 &6893902554880515573
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6801975350734993990}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47aa3cb45f4644839c3ca8fb52b1e987, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::InventoryComponent
+  capacity: 24
+  initialItems: []
+--- !u!114 &6150986370276931221
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6801975350734993990}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 38801d9187684c1388fa6e57b5d3c2be, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::InventorySaveParticipant
 --- !u!1 &6855459643176669629
 GameObject:
   m_ObjectHideFlags: 0
