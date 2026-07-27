@@ -75,7 +75,7 @@ public sealed class GrassSorting : MonoBehaviour
 
     private void CachePlayer(Collider2D other)
     {
-        if (!other.CompareTag("Player"))
+        if (other.GetComponentInParent<PlayerInputRouter>() == null)
         {
             return;
         }

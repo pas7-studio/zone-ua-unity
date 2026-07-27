@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public sealed class ArrowController : MonoBehaviour
 {
@@ -31,7 +32,12 @@ public sealed class ArrowController : MonoBehaviour
             return;
         }
 
-        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        if (Mouse.current == null)
+        {
+            return;
+        }
+
+        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Mouse.current.position.ReadValue());
         mousePosition.z = transform.position.z;
         transform.position = mousePosition;
     }
