@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Text;
 using Unity.Profiling;
 using UnityEngine;
 using ZoneUA.Performance;
@@ -10,8 +12,8 @@ public sealed class RuntimePerformanceMonitor : MonoBehaviour
     [SerializeField] private PerformanceBudgetProfile budgetProfile;
     [SerializeField, Min(0.1f)] private float sampleInterval = 1f;
     [SerializeField] private bool showOverlay = true;
-    [SerializeField] private bool writeJsonOnDisable;
-    [SerializeField] private string outputFileName = "performance-capture.json";
+    [SerializeField] private bool writeReportsOnDisable;
+    [SerializeField] private string outputBaseName = "performance-capture";
 
     private readonly List<PerformanceSample> samples = new List<PerformanceSample>();
     private ProfilerRecorder mainThreadRecorder;
@@ -52,7 +54,7 @@ public sealed class RuntimePerformanceMonitor : MonoBehaviour
         renderThreadRecorder.Dispose();
         gcAllocatedRecorder.Dispose();
         reservedMemoryRecorder.Dispose();
-        if (writeJsonOnDisable) WriteJson();
+        if (writeReportsOnDisable) WriteReports();
     }
 
     [ContextMenu("Capture Performance Sample")]
@@ -78,13 +80,48 @@ public sealed class RuntimePerformanceMonitor : MonoBehaviour
         samples.Add(latest);
     }
 
-    [ContextMenu("Write Performance JSON")]
+    [ContextMenu("Write Performance Reports")]
+    public void WriteReports()
+    {
+        WriteJson();
+        WriteCsv();
+    }
+
     public void WriteJson()
     {
-        string path = Path.Combine(Application.persistentDataPath, outputFileName);
+        string path = GetOutputPath("json");
         var collection = new SampleCollection { samples = new List<PerformanceSample>(samples) };
         File.WriteAllText(path, JsonUtility.ToJson(collection, true));
-        Debug.Log($"Performance capture written to {path}", this);
+        Debug.Log($"Performance JSON written to {path}", this);
+    }
+
+    public void WriteCsv()
+    {
+        string path = GetOutputPath("csv");
+        var builder = new StringBuilder();
+        builder.AppendLine("timestampSeconds,fps,mainThreadMs,renderThreadMs,gcAllocatedBytes,reservedMemoryBytes,trackedPoolInstances,scheduledPoolReleases,activeNpcCount,activeProjectileCount,generatedObjectCount");
+        foreach (PerformanceSample sample in samples)
+        {
+            builder.Append(sample.timestampSeconds.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
+                .Append(sample.framesPerSecond.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
+                .Append(sample.mainThreadMilliseconds.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
+                .Append(sample.renderThreadMilliseconds.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
+                .Append(sample.gcAllocatedBytes).Append(',')
+                .Append(sample.totalReservedMemoryBytes).Append(',')
+                .Append(sample.trackedPoolInstances).Append(',')
+                .Append(sample.scheduledPoolReleases).Append(',')
+                .Append(sample.activeNpcCount).Append(',')
+                .Append(sample.activeProjectileCount).Append(',')
+                .Append(sample.generatedObjectCount).AppendLine();
+        }
+        File.WriteAllText(path, builder.ToString());
+        Debug.Log($"Performance CSV written to {path}", this);
+    }
+
+    private string GetOutputPath(string extension)
+    {
+        string safeBaseName = string.IsNullOrWhiteSpace(outputBaseName) ? "performance-capture" : outputBaseName.Trim();
+        return Path.Combine(Application.persistentDataPath, $"{safeBaseName}.{extension}");
     }
 
     private void OnGUI()
