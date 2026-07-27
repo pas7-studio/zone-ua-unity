@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using ZoneUA.Combat;
 
 [DisallowMultipleComponent]
 public sealed class Death : MonoBehaviour
@@ -12,6 +13,8 @@ public sealed class Death : MonoBehaviour
     [SerializeField, Tooltip("Additional behaviours disabled when death is entered.")]
     private MonoBehaviour[] behavioursToDisable;
 
+    private readonly DeathState state = new DeathState();
+
     private Animator animator;
     private Rigidbody2D body;
     private CharacterCustomController characterController;
@@ -22,7 +25,7 @@ public sealed class Death : MonoBehaviour
 
     public event Action DeathEntered;
 
-    public bool IsDead { get; private set; }
+    public bool IsDead => state.IsDead;
 
     private void Awake()
     {
@@ -37,7 +40,7 @@ public sealed class Death : MonoBehaviour
 
     public void Dead()
     {
-        if (!TryEnterDeath())
+        if (!state.TryEnter())
         {
             return;
         }
@@ -49,13 +52,7 @@ public sealed class Death : MonoBehaviour
 
     public bool TryEnterDeath()
     {
-        if (IsDead)
-        {
-            return false;
-        }
-
-        IsDead = true;
-        return true;
+        return state.TryEnter();
     }
 
     private void DisableGameplay()
