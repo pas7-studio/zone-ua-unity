@@ -62,9 +62,9 @@ public sealed class WorkerJobAgent : MonoBehaviour, IPersistentSaveParticipant
         var snapshot = new System.Collections.Generic.List<ZoneUA.Inventory.InventoryEntry>(carryInventory.Entries);
         foreach (ZoneUA.Inventory.InventoryEntry entry in snapshot)
         {
-            if (!destination.Add(entry.ItemId, entry.Amount)) continue;
-            carryInventory.Remove(entry.ItemId, entry.Amount);
-            delivered += entry.Amount;
+            if (!destination.Add(entry.itemId, entry.amount)) continue;
+            carryInventory.Remove(entry.itemId, entry.amount);
+            delivered += entry.amount;
         }
         return delivered;
     }
