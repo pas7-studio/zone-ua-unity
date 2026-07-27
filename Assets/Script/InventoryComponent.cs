@@ -25,29 +25,39 @@ public sealed class InventoryComponent : MonoBehaviour
     public bool Add(string itemId, int amount)
     {
         if (!State.Add(itemId, amount)) return false;
-        InventoryChanged?.Invoke();
+        NotifyExternalChange();
         return true;
     }
 
     public bool Remove(string itemId, int amount)
     {
         if (!State.Remove(itemId, amount)) return false;
-        InventoryChanged?.Invoke();
+        NotifyExternalChange();
         return true;
     }
 
     public bool TryConsume(IEnumerable<InventoryEntry> costs)
     {
         if (!State.TryConsume(costs)) return false;
-        InventoryChanged?.Invoke();
+        NotifyExternalChange();
+        return true;
+    }
+
+    public bool TryTransferTo(InventoryComponent destination, string itemId, int amount)
+    {
+        if (destination == null || !State.TryTransferTo(destination.State, itemId, amount)) return false;
+        NotifyExternalChange();
+        destination.NotifyExternalChange();
         return true;
     }
 
     public void ReplaceContents(IEnumerable<InventoryEntry> entries)
     {
         State.Replace(entries);
-        InventoryChanged?.Invoke();
+        NotifyExternalChange();
     }
+
+    public void NotifyExternalChange() => InventoryChanged?.Invoke();
 
     private InventoryState CreateState()
     {
