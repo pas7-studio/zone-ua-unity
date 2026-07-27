@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using ZoneUA.Combat;
+using ZoneUA.Input;
 
 [DisallowMultipleComponent]
 public sealed class PlayerInputRouter : MonoBehaviour
@@ -19,6 +20,8 @@ public sealed class PlayerInputRouter : MonoBehaviour
     [SerializeField, Tooltip("Treat Look as an absolute screen position for pointer devices.")]
     private bool pointerLookIsScreenPosition = true;
 
+    private readonly PlayerInputState state = new PlayerInputState();
+
     private InputActionMap actionMap;
     private InputAction moveAction;
     private InputAction lookAction;
@@ -36,6 +39,8 @@ public sealed class PlayerInputRouter : MonoBehaviour
     private bool subscribed;
 
     public bool IsReady => actionMap != null;
+    public Vector2 MovementInput => state.Move;
+    public bool FireHeld => state.FireHeld;
 
     private void Awake()
     {
@@ -55,13 +60,17 @@ public sealed class PlayerInputRouter : MonoBehaviour
 
     private void OnDisable()
     {
-        StopCurrentWeaponFire();
+        if (state.ReleaseFire())
+        {
+            StopCurrentWeaponFire();
+        }
+
         SetExternalInputOwnership(false);
         actionMap?.Disable();
         Unsubscribe();
         previousActiveWeapon = null;
-        characterController?.SetMovementInput(Vector2.zero);
-        characterController?.SetSprintRequested(false);
+        state.Reset();
+        ApplyContinuousState();
     }
 
     private void Update()
@@ -71,16 +80,25 @@ public sealed class PlayerInputRouter : MonoBehaviour
             return;
         }
 
-        characterController?.SetMovementInput(moveAction?.ReadValue<Vector2>() ?? Vector2.zero);
-        characterController?.SetSprintRequested(sprintAction != null && sprintAction.IsPressed());
+        state.SetMove(moveAction?.ReadValue<Vector2>() ?? Vector2.zero);
+        state.SetSprint(sprintAction != null && sprintAction.IsPressed());
 
         if (lookAction != null)
         {
             bool isPointer = lookAction.activeControl?.device is Pointer;
-            characterController?.SetLookInput(
+            state.SetLook(
                 lookAction.ReadValue<Vector2>(),
                 pointerLookIsScreenPosition && isPointer);
         }
+
+        ApplyContinuousState();
+    }
+
+    private void ApplyContinuousState()
+    {
+        characterController?.SetMovementInput(state.Move);
+        characterController?.SetSprintRequested(state.Sprint);
+        characterController?.SetLookInput(state.Look, state.LookIsScreenPosition);
     }
 
     private void ResolveTargets()
@@ -187,8 +205,22 @@ public sealed class PlayerInputRouter : MonoBehaviour
 
     private void StopCurrentWeaponFire() => CurrentWeaponCommands?.StopFire();
 
-    private void OnFireStarted(InputAction.CallbackContext _) => CurrentWeaponCommands?.StartFire();
-    private void OnFireCanceled(InputAction.CallbackContext _) => CurrentWeaponCommands?.StopFire();
+    private void OnFireStarted(InputAction.CallbackContext _)
+    {
+        if (state.PressFire())
+        {
+            CurrentWeaponCommands?.StartFire();
+        }
+    }
+
+    private void OnFireCanceled(InputAction.CallbackContext _)
+    {
+        if (state.ReleaseFire())
+        {
+            CurrentWeaponCommands?.StopFire();
+        }
+    }
+
     private void OnReload(InputAction.CallbackContext _) => CurrentWeaponCommands?.Reload();
     private void OnSwitchFireMode(InputAction.CallbackContext _) => CurrentWeaponCommands?.SwitchFireMode();
     private void OnWeapon1(InputAction.CallbackContext _) => weaponSwitcher?.RequestSwitch(0);
