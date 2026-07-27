@@ -59,9 +59,10 @@ namespace ZoneUA.Performance
                 return 0f;
             }
 
-            percentile = Math.Clamp(percentile, 0f, 1f);
+            percentile = Math.Max(0f, Math.Min(1f, percentile));
             int index = (int)Math.Ceiling(percentile * ordered.Length) - 1;
-            return ordered[Math.Clamp(index, 0, ordered.Length - 1)];
+            index = Math.Max(0, Math.Min(ordered.Length - 1, index));
+            return ordered[index];
         }
     }
 }
