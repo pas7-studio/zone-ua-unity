@@ -3,7 +3,8 @@
   "rootNamespace": "ZoneUA.EditorValidation",
   "references": [
     "ZoneUA.SceneManagement",
-    "ZoneUA.Persistence"
+    "ZoneUA.Persistence",
+    "ZoneUA.Inventory"
   ],
   "includePlatforms": [
     "Editor"
