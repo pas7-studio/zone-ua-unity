@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public sealed class CameraFollow : MonoBehaviour
 {
@@ -32,12 +33,12 @@ public sealed class CameraFollow : MonoBehaviour
         desiredPosition.z = staticZPosition;
         transform.position = Vector3.Lerp(transform.position, desiredPosition, smoothSpeed);
 
-        if (!Input.GetMouseButton(1) || controlledCamera == null)
+        if (Mouse.current == null || !Mouse.current.rightButton.isPressed || controlledCamera == null)
         {
             return;
         }
 
-        Vector3 mouseWorldPosition = controlledCamera.ScreenToWorldPoint(Input.mousePosition);
+        Vector3 mouseWorldPosition = controlledCamera.ScreenToWorldPoint(Mouse.current.position.ReadValue());
         mouseWorldPosition.z = staticZPosition;
 
         Vector3 moveDirection = mouseWorldPosition - transform.position;

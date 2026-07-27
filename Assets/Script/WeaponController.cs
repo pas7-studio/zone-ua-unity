@@ -1,6 +1,7 @@
 using Assets.Script;
 using System;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using ZoneUA.Combat;
 
 [RequireComponent(typeof(Weapon))]
@@ -178,10 +179,17 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     private void HandleLegacyPlayerInput()
     {
-        if (Input.GetButtonDown("Fire1")) StartFire();
-        if (Input.GetButtonUp("Fire1")) StopFire();
-        if (Input.GetKeyDown(KeyCode.B)) SwitchFireMode();
-        if (Input.GetKeyDown(KeyCode.R)) Reload();
+        if (Mouse.current != null)
+        {
+            if (Mouse.current.leftButton.wasPressedThisFrame) StartFire();
+            if (Mouse.current.leftButton.wasReleasedThisFrame) StopFire();
+        }
+
+        if (Keyboard.current != null)
+        {
+            if (Keyboard.current.bKey.wasPressedThisFrame) SwitchFireMode();
+            if (Keyboard.current.rKey.wasPressedThisFrame) Reload();
+        }
     }
 
     public void SetExternalInputEnabled(bool enabled)
@@ -556,7 +564,12 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
             return Vector3.zero;
         }
 
-        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        if (Mouse.current == null)
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Mouse.current.position.ReadValue());
         mousePosition.z = transform.position.z;
         return mousePosition - transform.position;
     }
