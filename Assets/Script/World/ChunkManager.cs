@@ -1,10 +1,12 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+[DisallowMultipleComponent]
 public sealed class ChunkManager : MonoBehaviour
 {
     [SerializeField] private Camera mainCamera;
-    [SerializeField] private GameObject chunkParent;
+    [SerializeField, Tooltip("Optional parent containing generated chunk renderers.")]
+    private GameObject chunkParent;
     [SerializeField, Min(0.02f)] private float updateInterval = 0.5f;
     [SerializeField, Min(0f)] private float buffer = 0.5f;
 
@@ -18,6 +20,9 @@ public sealed class ChunkManager : MonoBehaviour
         public GameObject GameObject;
         public Renderer Renderer;
     }
+
+    public Transform ChunkRoot => chunkParent != null ? chunkParent.transform : transform;
+    public int TrackedChunkCount => chunks.Count;
 
     private void Awake()
     {
@@ -45,11 +50,20 @@ public sealed class ChunkManager : MonoBehaviour
         UpdateChunksVisibility();
     }
 
+    public void SetChunkRoot(Transform root, bool refreshImmediately = true)
+    {
+        chunkParent = root != null ? root.gameObject : null;
+        if (refreshImmediately)
+        {
+            RefreshChunks();
+        }
+    }
+
     public void RefreshChunks()
     {
         chunks.Clear();
 
-        Transform parent = chunkParent != null ? chunkParent.transform : transform;
+        Transform parent = ChunkRoot;
         foreach (Transform child in parent)
         {
             Renderer renderer = child.GetComponent<Renderer>();
@@ -95,9 +109,7 @@ public sealed class ChunkManager : MonoBehaviour
                 continue;
             }
 
-            bool shouldBeActive =
-                GeometryUtility.TestPlanesAABB(frustumPlanes, chunk.Renderer.bounds);
-
+            bool shouldBeActive = GeometryUtility.TestPlanesAABB(frustumPlanes, chunk.Renderer.bounds);
             if (chunk.GameObject.activeSelf != shouldBeActive)
             {
                 chunk.GameObject.SetActive(shouldBeActive);
