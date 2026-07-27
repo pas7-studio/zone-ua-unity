@@ -131,7 +131,7 @@ namespace ZoneUA.EditorValidation
         {
             if (File.Exists(BootstrapScenePath)) return;
 
-            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             try
             {
                 GameObject root = new GameObject("ZoneUA_Bootstrap");
@@ -169,7 +169,7 @@ namespace ZoneUA.EditorValidation
         private static void EnsureEmptyScene(string path, string rootName)
         {
             if (File.Exists(path)) return;
-            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             try
             {
                 GameObject root = new GameObject(rootName);

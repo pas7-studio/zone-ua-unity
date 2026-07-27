@@ -6,6 +6,18 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/_ZoneUA/Scenes/Bootstrap/Bootstrap.unity
+    guid: 368d873d6028fcc41b927cfac3369760
+  - enabled: 1
+    path: Assets/_ZoneUA/Scenes/Production/Production.unity
+    guid: b7fd7beacb83a254082ed93f9013018e
+  - enabled: 0
+    path: Assets/_ZoneUA/Scenes/Development/Development.unity
+    guid: e8ebaa2c3553eff48b341a72eaacce9f
+  - enabled: 0
+    path: Assets/_ZoneUA/Scenes/Tests/Tests.unity
+    guid: 551002b63dc717f49a55efda86152a20
+  - enabled: 1
     path: Assets/Scenes/SampleScene.unity
     guid: 3fc8acdd13e6c734bafef6554d6fdbcd
   m_configObjects:
