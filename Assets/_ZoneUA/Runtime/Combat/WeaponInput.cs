@@ -8,11 +8,6 @@ namespace ZoneUA.Combat
         [SerializeField, Tooltip("Component implementing IWeaponCommands.")]
         private MonoBehaviour commandSource;
 
-        [Header("Legacy Input Bridge")]
-        [SerializeField] private string fireButton = "Fire1";
-        [SerializeField] private KeyCode reloadKey = KeyCode.R;
-        [SerializeField] private KeyCode switchModeKey = KeyCode.B;
-
         private IWeaponCommands commands;
         private IWeaponInputOwnership inputOwnership;
 
@@ -30,18 +25,10 @@ namespace ZoneUA.Combat
             inputOwnership?.SetExternalInputEnabled(false);
         }
 
-        private void Update()
-        {
-            if (commands == null)
-            {
-                return;
-            }
-
-            if (Input.GetButtonDown(fireButton)) commands.StartFire();
-            if (Input.GetButtonUp(fireButton)) commands.StopFire();
-            if (Input.GetKeyDown(reloadKey)) commands.Reload();
-            if (Input.GetKeyDown(switchModeKey)) commands.SwitchFireMode();
-        }
+        public void StartFire() => commands?.StartFire();
+        public void StopFire() => commands?.StopFire();
+        public void Reload() => commands?.Reload();
+        public void SwitchFireMode() => commands?.SwitchFireMode();
 
         private void ResolveSource()
         {
