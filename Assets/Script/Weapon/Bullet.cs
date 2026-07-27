@@ -12,6 +12,11 @@ public sealed class Bullet : MonoBehaviour
 
     private bool hasHit;
 
+    private void OnEnable()
+    {
+        hasHit = false;
+    }
+
     private void OnTriggerEnter2D(Collider2D other)
     {
         if (hasHit || !CanDamage(other))
@@ -45,7 +50,15 @@ public sealed class Bullet : MonoBehaviour
             }
         }
 
-        Destroy(gameObject);
+        GlobalSystem system = GlobalSystem.Instance;
+        if (system != null)
+        {
+            system.Release(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
     }
 
     private bool CanDamage(Collider2D other)
