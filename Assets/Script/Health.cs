@@ -118,13 +118,13 @@ public sealed class Health : MonoBehaviour
                 Random.insideUnitCircle * globalSystem.BloodSpawnRadius;
 
             Quaternion rotation = Quaternion.Euler(0f, 0f, Random.Range(-180f, 180f));
-            GameObject bloodDrop = Instantiate(
+            GameObject bloodDrop = globalSystem.Spawn(
                 bloodPrefab,
                 spawnPosition,
                 rotation,
                 globalSystem.RuntimeContainer);
 
-            if (!bloodDrop.TryGetComponent(out Rigidbody2D body))
+            if (bloodDrop == null || !bloodDrop.TryGetComponent(out Rigidbody2D body))
             {
                 continue;
             }
@@ -143,20 +143,24 @@ public sealed class Health : MonoBehaviour
             return;
         }
 
-        ParticleSystem instance = Instantiate(
+        ParticleSystem instance = globalSystem.Spawn(
             bloodEffectPrefab,
             transform.position,
             bloodEffectPrefab.transform.rotation,
             globalSystem.RuntimeContainer);
 
+        if (instance == null)
+        {
+            return;
+        }
+
         instance.Play();
 
         ParticleSystem.MainModule main = instance.main;
-        float lifetime = main.startLifetime.constantMax;
-        Destroy(instance.gameObject, Mathf.Max(0.1f, lifetime));
+        float lifetime = main.duration + main.startLifetime.constantMax;
+        globalSystem.ReleaseAfter(instance.gameObject, Mathf.Max(0.1f, lifetime));
     }
 
-    // Backwards-compatible methods used by existing scripts or UnityEvents.
     public void HealthLogic()
     {
         if (currentHeals <= 0)
