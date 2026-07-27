@@ -1,0 +1,22 @@
+{
+  "name": "ZoneUA.Combat.EditModeTests",
+  "rootNamespace": "ZoneUA.Combat.Tests",
+  "references": [
+    "ZoneUA.Combat",
+    "ZoneUA.Definitions"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

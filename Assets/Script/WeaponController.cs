@@ -10,7 +10,20 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
     private static readonly int ReloadSpeedHash = Animator.StringToHash("ReloadSpeed");
     private static readonly int ReloadHash = Animator.StringToHash("Reload");
 
-    [Header("Weapon Objects")]
+    [Header("Modular Components")]
+    [SerializeField, Tooltip("Optional projectile spawning module. Legacy spawning remains available during migration.")]
+    private ProjectileSpawner projectileSpawner;
+
+    [SerializeField, Tooltip("Optional shell ejection module. Legacy shell spawning remains available during migration.")]
+    private ShellEjector shellEjector;
+
+    [SerializeField, Tooltip("Optional weapon audio module. The local AudioSource remains a fallback.")]
+    private WeaponAudio weaponAudio;
+
+    [SerializeField, Tooltip("Optional recoil/spread module. Legacy recoil fields remain a fallback.")]
+    private WeaponRecoil weaponRecoil;
+
+    [Header("Weapon Objects (Legacy Fallback)")]
     [SerializeField] private GameObject bulletSpawnPoint;
     [SerializeField] private GameObject pickupsSpawnPoint;
     [SerializeField] private GameObject bulletPrefab;
@@ -31,12 +44,11 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     [Header("Runtime State")]
     [SerializeField, HideInInspector] private int currentAmmo;
-    [SerializeField, HideInInspector] private bool isReloading;
 
     [Header("Legacy Reload Fallback")]
     [SerializeField, Min(0.01f)] private float reloadTime = 1f;
 
-    [Header("Recoil")]
+    [Header("Legacy Recoil Fallback")]
     [SerializeField, Min(0f)] private float recoilForce = 5f;
     [SerializeField, Min(0f)] private float maxRecoilAmount = 2f;
     [SerializeField, Min(0f)] private float recoilIncreaseAmount = 0.1f;
@@ -44,7 +56,7 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
     [SerializeField, Min(0f)] private float recoilVerticalPlus = 1.5f;
     [SerializeField, Min(0f)] private float recoilVerticalMinus = 0.5f;
 
-    [Header("Ammo Drop")]
+    [Header("Legacy Ammo Drop Fallback")]
     [SerializeField, Min(0f)] private float ammoImpulseSpeed = 10f;
     [SerializeField, Min(0f)] private float ammoImpulseDuration = 1f;
     [SerializeField, Range(0f, 180f)] private float maxRotation = 45f;
@@ -61,22 +73,17 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
     [Header("Control")]
     [SerializeField, Min(0f)] private float rotationSpeed = 10f;
 
+    private readonly WeaponFireState fireState = new WeaponFireState();
+    private readonly WeaponReloadState reloadState = new WeaponReloadState();
+
     private AudioSource audioSource;
     private GlobalSystem globalSystem;
-    private UIAmmoSystem ammoSystem;
     private Animator weaponAnimator;
     private Camera mainCamera;
     private Weapon weapon;
     private Transform bulletSpawnTransform;
     private Transform pickupsSpawnTransform;
-
     private float currentRecoilAmount;
-    private float nextShotTime;
-    private float reloadCompleteTime;
-    private float burstCooldownUntil;
-    private int burstShotsRemaining;
-    private bool triggerHeld;
-    private bool singleConsumed;
     private bool isLeftRotated;
     private bool externalInputEnabled;
 
@@ -97,7 +104,7 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
     public int MagazineCapacity => weapon != null ? weapon.MaximumAmmo : 0;
     public bool SupportsAuto => SupportsMode(FireMode.Auto);
     public bool SupportsBurst => SupportsMode(FireMode.Burst);
-    public bool IsReloading => isReloading;
+    public bool IsReloading => reloadState.IsReloading;
     public WeaponFireMode CurrentMode => ToDefinitionMode(fireMode);
 
     public FireMode CurrentFireMode
@@ -112,6 +119,8 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
         set => rotationSpeed = Mathf.Max(0f, value);
     }
 
+    private WeaponDefinition Definition => weapon != null ? weapon.Definition : null;
+
     private void Awake()
     {
         weapon = GetComponent<Weapon>();
@@ -121,15 +130,25 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
         bulletSpawnTransform = bulletSpawnPoint != null ? bulletSpawnPoint.transform : null;
         pickupsSpawnTransform = pickupsSpawnPoint != null ? pickupsSpawnPoint.transform : null;
         isNPCControlled = GetComponentInParent<NPCController>() != null;
+
+        projectileSpawner ??= GetComponent<ProjectileSpawner>();
+        shellEjector ??= GetComponent<ShellEjector>();
+        weaponAudio ??= GetComponent<WeaponAudio>();
+        weaponRecoil ??= GetComponent<WeaponRecoil>();
+
+        if (projectileSpawner != null && projectileSpawner.Muzzle == null && bulletSpawnTransform != null)
+        {
+            projectileSpawner.SetMuzzle(bulletSpawnTransform);
+        }
+
         ApplyDefinitionDefaults();
     }
 
     private void Start()
     {
         globalSystem = GlobalSystem.Instance;
-        ammoSystem = globalSystem != null ? globalSystem.AmmoUI : null;
         currentAmmo = MagazineCapacity;
-        isReloading = false;
+        reloadState.Reset();
         RaiseAmmoChanged();
     }
 
@@ -141,7 +160,7 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
     private void OnDisable()
     {
         ResetTransientState();
-        isReloading = false;
+        CancelReload();
     }
 
     private void Update()
@@ -151,10 +170,10 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
             HandleLegacyPlayerInput();
         }
 
-        TickReload();
-        TickFire();
+        TickReload(Time.time);
+        TickFire(Time.time);
         UpdateAim();
-        currentRecoilAmount = Mathf.MoveTowards(currentRecoilAmount, 0f, recoilDecreaseAmount * Time.deltaTime);
+        TickRecoil(Time.deltaTime);
     }
 
     private void HandleLegacyPlayerInput()
@@ -176,24 +195,16 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     public void StartFire()
     {
-        if (triggerHeld)
-        {
-            return;
-        }
-
-        triggerHeld = true;
-        singleConsumed = false;
-
+        fireState.StartTrigger();
         if (fireMode == FireMode.Burst)
         {
-            TryBeginBurst();
+            TryBeginBurst(Time.time);
         }
     }
 
     public void StopFire()
     {
-        triggerHeld = false;
-        singleConsumed = false;
+        fireState.StopTrigger();
     }
 
     public void SetAimTarget(Transform target)
@@ -203,135 +214,82 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     public void SwitchFireMode()
     {
-        FireMode next = GetNextSupportedMode(fireMode);
-        SetFireMode(next);
+        SetFireMode(GetNextSupportedMode(fireMode));
     }
 
     public void FireModeChange() => SwitchFireMode();
 
     public void FireWithModes()
     {
-        if (isReloading)
+        if (IsReloading)
         {
             return;
         }
 
         if (fireMode == FireMode.Burst)
         {
-            TryBeginBurst();
+            TryBeginBurst(Time.time);
+            TickFire(Time.time);
+            return;
         }
-        else
+
+        if (TryFireRound())
         {
-            TryFireSingleRound();
+            fireState.RegisterSuccessfulShot(CurrentMode, Time.time, ShotInterval, BurstCooldown);
         }
     }
 
     public void Fire() => TryFireRound();
 
-    private void TickFire()
+    private void TickFire(float currentTime)
     {
-        if (isReloading)
+        if (IsReloading)
         {
             return;
         }
 
-        if (burstShotsRemaining > 0)
+        if (fireMode == FireMode.Burst && fireState.TriggerHeld && !fireState.IsBurstActive)
         {
-            if (Time.time >= nextShotTime)
-            {
-                if (TryFireRound())
-                {
-                    burstShotsRemaining--;
-                    nextShotTime = Time.time + ShotInterval;
-                }
-                else
-                {
-                    burstShotsRemaining = 0;
-                }
-
-                if (burstShotsRemaining == 0)
-                {
-                    burstCooldownUntil = Time.time + BurstCooldown;
-                }
-            }
-
-            return;
+            TryBeginBurst(currentTime);
         }
 
-        if (!triggerHeld)
+        if (!fireState.ShouldAttemptShot(CurrentMode, currentTime))
         {
             return;
         }
 
-        switch (fireMode)
+        if (TryFireRound())
         {
-            case FireMode.Auto:
-                if (Time.time >= nextShotTime)
-                {
-                    TryFireSingleRound();
-                }
-                break;
-
-            case FireMode.Single:
-                if (!singleConsumed)
-                {
-                    singleConsumed = true;
-                    TryFireSingleRound();
-                }
-                break;
-
-            case FireMode.Burst:
-                TryBeginBurst();
-                break;
+            fireState.RegisterSuccessfulShot(CurrentMode, currentTime, ShotInterval, BurstCooldown);
+        }
+        else
+        {
+            fireState.RegisterFailedShot();
         }
     }
 
-    private bool TryBeginBurst()
+    private bool TryBeginBurst(float currentTime)
     {
-        if (!SupportsMode(FireMode.Burst) || burstShotsRemaining > 0 || Time.time < burstCooldownUntil)
-        {
-            return false;
-        }
-
-        burstShotsRemaining = BurstSize;
-        nextShotTime = Mathf.Max(nextShotTime, Time.time);
-        return true;
-    }
-
-    private bool TryFireSingleRound()
-    {
-        if (Time.time < nextShotTime || !TryFireRound())
-        {
-            return false;
-        }
-
-        nextShotTime = Time.time + ShotInterval;
-        return true;
+        return SupportsMode(FireMode.Burst) && fireState.TryStartBurst(BurstSize, currentTime);
     }
 
     private bool TryFireRound()
     {
-        ProjectileDefinition projectile = weapon != null ? weapon.Projectile : null;
-        GameObject projectilePrefab = projectile != null && projectile.Prefab != null ? projectile.Prefab : bulletPrefab;
+        if (currentAmmo <= 0)
+        {
+            PlayEmptyAudio();
+            return false;
+        }
 
-        if (currentAmmo <= 0 || isReloading || projectilePrefab == null || bulletSpawnTransform == null)
+        if (IsReloading)
         {
             return false;
         }
 
-        PlayShotAudio();
-        currentAmmo--;
-        RaiseAmmoChanged();
-
-        globalSystem ??= GlobalSystem.Instance;
-        GameObject bullet = globalSystem != null
-            ? globalSystem.Spawn(projectilePrefab, bulletSpawnTransform.position, transform.rotation)
-            : Instantiate(projectilePrefab, bulletSpawnTransform.position, transform.rotation);
-
+        ProjectileDefinition projectile = weapon != null ? weapon.Projectile : null;
+        GameObject bullet = SpawnProjectile(projectile);
         if (bullet == null)
         {
-            currentAmmo++;
-            RaiseAmmoChanged();
             return false;
         }
 
@@ -340,22 +298,97 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
             bulletComponent.Configure(projectile, gameObject, transform.root.gameObject);
         }
 
-        if (bullet.TryGetComponent(out Rigidbody2D bulletBody))
+        currentAmmo--;
+        RaiseAmmoChanged();
+        PlayShotAudio();
+        RegisterRecoil();
+        EjectShell();
+        return true;
+    }
+
+    private GameObject SpawnProjectile(ProjectileDefinition projectile)
+    {
+        if (projectileSpawner != null)
         {
-            bulletBody.AddForce(transform.right * ProjectileSpeed);
+            return projectileSpawner.Spawn(projectile, bulletPrefab, bulletSpeed);
         }
 
-        currentRecoilAmount = Mathf.Min(maxRecoilAmount, currentRecoilAmount + recoilIncreaseAmount + recoilForce * 0.001f);
-        SpawnAmmoDrop();
-        return true;
+        GameObject projectilePrefab = projectile != null && projectile.Prefab != null
+            ? projectile.Prefab
+            : bulletPrefab;
+
+        if (projectilePrefab == null || bulletSpawnTransform == null)
+        {
+            return null;
+        }
+
+        globalSystem ??= GlobalSystem.Instance;
+        GameObject bullet = globalSystem != null
+            ? globalSystem.Spawn(projectilePrefab, bulletSpawnTransform.position, transform.rotation)
+            : Instantiate(projectilePrefab, bulletSpawnTransform.position, transform.rotation);
+
+        if (bullet != null && bullet.TryGetComponent(out Rigidbody2D bulletBody))
+        {
+            bulletBody.linearVelocity = transform.right * ProjectileSpeed;
+            if (projectile != null && projectile.ContinuousCollision)
+            {
+                bulletBody.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            }
+        }
+
+        return bullet;
+    }
+
+    private void TickRecoil(float deltaTime)
+    {
+        if (weaponRecoil != null)
+        {
+            weaponRecoil.Tick(Definition, deltaTime);
+            return;
+        }
+
+        currentRecoilAmount = Mathf.MoveTowards(
+            currentRecoilAmount,
+            0f,
+            recoilDecreaseAmount * deltaTime);
+    }
+
+    private void RegisterRecoil()
+    {
+        if (weaponRecoil != null)
+        {
+            weaponRecoil.RegisterShot(Definition);
+            return;
+        }
+
+        currentRecoilAmount = Mathf.Min(
+            maxRecoilAmount,
+            currentRecoilAmount + recoilIncreaseAmount + recoilForce * 0.001f);
+    }
+
+    private void EjectShell()
+    {
+        if (shellEjector != null)
+        {
+            shellEjector.Eject();
+            return;
+        }
+
+        SpawnLegacyAmmoDrop();
     }
 
     private void PlayShotAudio()
     {
-        AudioClip clip = weapon != null && weapon.Definition != null && weapon.Definition.ShotClip != null
-            ? weapon.Definition.ShotClip
+        if (weaponAudio != null)
+        {
+            weaponAudio.PlayShot(Definition);
+            return;
+        }
+
+        AudioClip clip = Definition != null && Definition.ShotClip != null
+            ? Definition.ShotClip
             : shootSound;
-        float volume = weapon != null && weapon.Definition != null ? weapon.Definition.AudioVolume : shootVolume;
+        float volume = Definition != null ? Definition.AudioVolume : shootVolume;
 
         if (clip != null)
         {
@@ -363,7 +396,17 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
         }
     }
 
-    private void SpawnAmmoDrop()
+    private void PlayReloadAudio()
+    {
+        weaponAudio?.PlayReload(Definition);
+    }
+
+    private void PlayEmptyAudio()
+    {
+        weaponAudio?.PlayEmpty(Definition);
+    }
+
+    private void SpawnLegacyAmmoDrop()
     {
         if (ammoPrefab == null || pickupsSpawnTransform == null)
         {
@@ -371,8 +414,12 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
         }
 
         globalSystem ??= GlobalSystem.Instance;
-        Vector3 position = pickupsSpawnTransform.position + transform.up * UnityEngine.Random.Range(-maxOffset, maxOffset);
-        Quaternion rotation = Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(-maxRotation, maxRotation));
+        Vector3 position = pickupsSpawnTransform.position +
+                           transform.up * UnityEngine.Random.Range(-maxOffset, maxOffset);
+        Quaternion rotation = Quaternion.Euler(
+            0f,
+            0f,
+            UnityEngine.Random.Range(-maxRotation, maxRotation));
 
         GameObject ammoDrop = globalSystem != null
             ? globalSystem.Spawn(ammoPrefab, position, rotation, globalSystem.RuntimeContainer)
@@ -380,6 +427,8 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
         if (ammoDrop != null && ammoDrop.TryGetComponent(out Rigidbody2D body))
         {
+            body.linearVelocity = Vector2.zero;
+            body.angularVelocity = 0f;
             body.AddForce(-transform.up * ammoImpulseSpeed, ForceMode2D.Impulse);
             StartCoroutine(Tools.AttenuateVelocity(body, ammoImpulseDuration));
         }
@@ -392,15 +441,13 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     public void Reload()
     {
-        if (isReloading || currentAmmo >= MagazineCapacity)
+        if (!reloadState.TryStart(currentAmmo, MagazineCapacity, Time.time, ReloadDuration))
         {
             return;
         }
 
-        StopFire();
-        burstShotsRemaining = 0;
-        isReloading = true;
-        reloadCompleteTime = Time.time + ReloadDuration;
+        fireState.StopTrigger();
+        fireState.CancelBurst();
 
         if (weaponAnimator != null)
         {
@@ -409,18 +456,18 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
             weaponAnimator.SetTrigger(ReloadHash);
         }
 
+        PlayReloadAudio();
         ReloadStarted?.Invoke();
     }
 
-    private void TickReload()
+    private void TickReload(float currentTime)
     {
-        if (!isReloading || Time.time < reloadCompleteTime)
+        if (!reloadState.TryComplete(currentTime))
         {
             return;
         }
 
         currentAmmo = MagazineCapacity;
-        isReloading = false;
 
         if (weaponAnimator != null)
         {
@@ -431,10 +478,20 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
         ReloadCompleted?.Invoke();
     }
 
+    private void CancelReload()
+    {
+        reloadState.Cancel();
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.enabled = false;
+        }
+    }
+
     public void WeaponChanged()
     {
         ResetTransientState();
-        isReloading = false;
+        CancelReload();
+        RaiseAmmoChanged();
     }
 
     public void SetNPCTarget(Transform target) => SetAimTarget(target);
@@ -449,12 +506,20 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
             {
                 float angle = GetTargetAngle(target);
                 ChangeDirectWeaponByAngle(angle);
-                if (npcTarget != null) RotateWeaponWithRecoil(angle); else RotateWeapon(angle);
+                if (npcTarget != null)
+                {
+                    RotateWeaponWithRecoil(angle);
+                }
+                else
+                {
+                    RotateWeapon(angle);
+                }
             }
             else
             {
                 RotateWeapon(isLeftRotated ? 180f : 0f);
             }
+
             return;
         }
 
@@ -476,24 +541,36 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
         return CalculateTargetAngle(direction);
     }
 
-    public float CalculateTargetAngle(Vector3 target) => Mathf.Atan2(target.y, target.x) * Mathf.Rad2Deg;
+    public float CalculateTargetAngle(Vector3 target) =>
+        Mathf.Atan2(target.y, target.x) * Mathf.Rad2Deg;
 
     public Vector3 CalculateDirectionForPlayerMouse()
     {
-        if (mainCamera == null) mainCamera = Camera.main;
-        if (mainCamera == null) return Vector3.zero;
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main;
+        }
+
+        if (mainCamera == null)
+        {
+            return Vector3.zero;
+        }
 
         Vector3 mousePosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
         mousePosition.z = transform.position.z;
         return mousePosition - transform.position;
     }
 
-    public Vector3 CalculateDirectionForObjects(Transform target) => target != null ? target.position - transform.position : Vector3.zero;
+    public Vector3 CalculateDirectionForObjects(Transform target) =>
+        target != null ? target.position - transform.position : Vector3.zero;
 
     public void ChangeDirectWeaponByAngle(float targetAngle)
     {
         bool shouldFaceLeft = targetAngle > 90f || targetAngle < -90f;
-        if (shouldFaceLeft == isLeftRotated) return;
+        if (shouldFaceLeft == isLeftRotated)
+        {
+            return;
+        }
 
         Vector3 scale = transform.localScale;
         scale.y = -scale.y;
@@ -510,26 +587,40 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     public void RotateWeaponWithRecoil(float targetAngle)
     {
-        float min = -currentRecoilAmount * (isLeftRotated ? recoilVerticalPlus : recoilVerticalMinus);
-        float max = currentRecoilAmount * (isLeftRotated ? recoilVerticalMinus : recoilVerticalPlus);
-        RotateWeapon(targetAngle + UnityEngine.Random.Range(min, max));
+        if (weaponRecoil != null)
+        {
+            RotateWeapon(weaponRecoil.ApplyToAngle(targetAngle, isLeftRotated));
+            return;
+        }
+
+        float minimum = -currentRecoilAmount *
+                        (isLeftRotated ? recoilVerticalPlus : recoilVerticalMinus);
+        float maximum = currentRecoilAmount *
+                        (isLeftRotated ? recoilVerticalMinus : recoilVerticalPlus);
+        RotateWeapon(targetAngle + UnityEngine.Random.Range(minimum, maximum));
     }
 
     public void RecoilDecrease()
     {
-        currentRecoilAmount = Mathf.MoveTowards(currentRecoilAmount, 0f, recoilDecreaseAmount * Time.deltaTime);
+        TickRecoil(Time.deltaTime);
     }
 
-    public void rotateWeaponToDirectionWithoutZ() => RotateWeapon(isLeftRotated ? 180f : 0f);
+    public void rotateWeaponToDirectionWithoutZ() =>
+        RotateWeapon(isLeftRotated ? 180f : 0f);
 
     private void SetFireMode(FireMode requested)
     {
-        FireMode valid = SupportsMode(requested) ? requested : GetNextSupportedMode(requested);
-        if (fireMode == valid) return;
+        FireMode valid = SupportsMode(requested)
+            ? requested
+            : GetNextSupportedMode(requested);
+
+        if (fireMode == valid)
+        {
+            return;
+        }
 
         fireMode = valid;
-        StopFire();
-        burstShotsRemaining = 0;
+        fireState.Reset();
         FireModeChanged?.Invoke(ToDefinitionMode(fireMode));
     }
 
@@ -541,7 +632,10 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
         for (int offset = 1; offset <= order.Length; offset++)
         {
             FireMode candidate = order[(start + offset + order.Length) % order.Length];
-            if (SupportsMode(candidate)) return candidate;
+            if (SupportsMode(candidate))
+            {
+                return candidate;
+            }
         }
 
         return FireMode.Single;
@@ -549,10 +643,9 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     private bool SupportsMode(FireMode mode)
     {
-        WeaponDefinition definition = weapon != null ? weapon.Definition : null;
-        if (definition != null)
+        if (Definition != null)
         {
-            return definition.Supports(ToDefinitionMode(mode));
+            return Definition.Supports(ToDefinitionMode(mode));
         }
 
         return mode switch
@@ -566,42 +659,43 @@ public sealed class WeaponController : MonoBehaviour, IWeaponCommands, IWeaponIn
 
     private void ApplyDefinitionDefaults()
     {
-        WeaponDefinition definition = weapon != null ? weapon.Definition : null;
-        if (definition == null)
+        if (Definition == null)
         {
-            if (!SupportsMode(fireMode)) fireMode = FireMode.Single;
+            if (!SupportsMode(fireMode))
+            {
+                fireMode = FireMode.Single;
+            }
+
             return;
         }
 
-        fireMode = FromDefinitionMode(definition.DefaultFireMode);
-        recoilIncreaseAmount = definition.SpreadPerShot;
-        maxRecoilAmount = definition.MaximumSpread;
-        recoilDecreaseAmount = definition.SpreadRecoveryPerSecond;
+        fireMode = FromDefinitionMode(Definition.DefaultFireMode);
+        recoilIncreaseAmount = Definition.SpreadPerShot;
+        maxRecoilAmount = Definition.MaximumSpread;
+        recoilDecreaseAmount = Definition.SpreadRecoveryPerSecond;
     }
 
     private void ResetTransientState()
     {
-        triggerHeld = false;
-        singleConsumed = false;
-        burstShotsRemaining = 0;
-        nextShotTime = 0f;
-        burstCooldownUntil = 0f;
+        fireState.Reset();
+        weaponRecoil?.ResetState();
+        currentRecoilAmount = 0f;
     }
 
     private void RaiseAmmoChanged()
     {
         AmmoChanged?.Invoke(currentAmmo, MagazineCapacity);
-        if (!isNPCControlled && ammoSystem != null)
-        {
-            ammoSystem.PopAmmo(currentAmmo, MagazineCapacity);
-        }
     }
 
-    private float ShotInterval => weapon != null && weapon.Definition != null ? weapon.Definition.ShotInterval : fireRate;
-    private float ReloadDuration => Mathf.Max(0.01f, weapon != null && weapon.Definition != null ? weapon.Definition.ReloadDuration : reloadTime);
-    private int BurstSize => weapon != null && weapon.Definition != null ? weapon.Definition.BurstSize : burstSize;
-    private float BurstCooldown => weapon != null && weapon.Definition != null ? weapon.Definition.BurstCooldown : burstInterval;
-    private float ProjectileSpeed => weapon != null && weapon.Projectile != null ? weapon.Projectile.Speed : bulletSpeed;
+    private float ShotInterval => Definition != null ? Definition.ShotInterval : fireRate;
+    private float ReloadDuration => Mathf.Max(
+        0.01f,
+        Definition != null ? Definition.ReloadDuration : reloadTime);
+    private int BurstSize => Definition != null ? Definition.BurstSize : burstSize;
+    private float BurstCooldown => Definition != null ? Definition.BurstCooldown : burstInterval;
+    private float ProjectileSpeed => weapon != null && weapon.Projectile != null
+        ? weapon.Projectile.Speed
+        : bulletSpeed;
 
     private static WeaponFireMode ToDefinitionMode(FireMode mode)
     {
