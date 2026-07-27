@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -11,11 +12,8 @@ namespace ZoneUA.EditorValidation
     public static class ZoneUAProductionMigrator
     {
         [MenuItem("Zone UA/Migration/Audit Production Composition", priority = 20)]
-        public static void AuditProject()
-        {
-            CompositionMigrationReport report = AuditAssets(FindProductionAssetPaths(), false);
-            CompositionMigrationWindow.ShowReport(report);
-        }
+        public static void AuditProject() =>
+            CompositionMigrationWindow.ShowReport(AuditAssets(FindProductionAssetPaths(), false));
 
         [MenuItem("Zone UA/Migration/Migrate Selected Prefabs", priority = 21)]
         public static void MigrateSelectedPrefabs()
@@ -36,67 +34,29 @@ namespace ZoneUA.EditorValidation
         {
             if (!EditorUtility.DisplayDialog(
                     "Migrate production prefabs",
-                    "Missing composition components will be added to first-party prefabs under Assets. Prefab GUIDs and existing components are preserved. Continue?",
+                    "Safe missing composition components will be added to first-party prefabs. Existing GUIDs, components and prefab references are preserved.",
                     "Migrate",
                     "Cancel"))
             {
                 return;
             }
 
-            string[] prefabPaths = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets" })
-                .Select(AssetDatabase.GUIDToAssetPath)
-                .Where(IsFirstPartyAsset)
-                .ToArray();
-
-            CompositionMigrationReport report = AuditAssets(prefabPaths, true);
+            CompositionMigrationReport report = AuditAssets(FindProductionAssetPaths(), true);
             AssetDatabase.SaveAssets();
             CompositionMigrationWindow.ShowReport(report);
         }
 
         [MenuItem("Zone UA/Migration/Audit Open Scenes", priority = 23)]
-        public static void AuditOpenScenes()
-        {
-            CompositionMigrationReport report = new CompositionMigrationReport();
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                Scene scene = SceneManager.GetSceneAt(i);
-                if (!scene.isLoaded) continue;
-                foreach (GameObject root in scene.GetRootGameObjects())
-                {
-                    AuditHierarchy(root, scene.path, false, report);
-                }
-            }
-
-            CompositionMigrationWindow.ShowReport(report);
-        }
+        public static void AuditOpenScenes() =>
+            CompositionMigrationWindow.ShowReport(ProcessOpenScenes(false));
 
         [MenuItem("Zone UA/Migration/Migrate Open Scenes", priority = 24)]
-        public static void MigrateOpenScenes()
-        {
-            CompositionMigrationReport report = new CompositionMigrationReport();
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                Scene scene = SceneManager.GetSceneAt(i);
-                if (!scene.isLoaded) continue;
-
-                bool changed = false;
-                foreach (GameObject root in scene.GetRootGameObjects())
-                {
-                    changed |= AuditHierarchy(root, scene.path, true, report);
-                }
-
-                if (changed)
-                {
-                    EditorSceneManager.MarkSceneDirty(scene);
-                }
-            }
-
-            CompositionMigrationWindow.ShowReport(report);
-        }
+        public static void MigrateOpenScenes() =>
+            CompositionMigrationWindow.ShowReport(ProcessOpenScenes(true));
 
         public static CompositionMigrationReport AuditAssets(IEnumerable<string> assetPaths, bool applyFixes)
         {
-            CompositionMigrationReport report = new CompositionMigrationReport();
+            var report = new CompositionMigrationReport();
             foreach (string path in assetPaths.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct())
             {
                 if (path.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
@@ -108,11 +68,41 @@ namespace ZoneUA.EditorValidation
             return report;
         }
 
+        private static CompositionMigrationReport ProcessOpenScenes(bool applyFixes)
+        {
+            var report = new CompositionMigrationReport();
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                Scene scene = SceneManager.GetSceneAt(i);
+                if (!scene.isLoaded) continue;
+
+                bool changed = false;
+                foreach (GameObject root in scene.GetRootGameObjects())
+                {
+                    changed |= AuditHierarchy(root, scene.path, applyFixes, report);
+                }
+
+                if (changed && applyFixes)
+                {
+                    EditorSceneManager.MarkSceneDirty(scene);
+                }
+            }
+
+            return report;
+        }
+
         private static void AuditPrefab(string path, bool applyFixes, CompositionMigrationReport report)
         {
-            GameObject root = PrefabUtility.LoadPrefabContents(path);
+            GameObject root = null;
             try
             {
+                root = PrefabUtility.LoadPrefabContents(path);
+                if (root == null)
+                {
+                    report.Add(CompositionMigrationStatus.Error, path, string.Empty, "Prefab contents could not be loaded.");
+                    return;
+                }
+
                 bool changed = AuditHierarchy(root, path, applyFixes, report);
                 if (changed && applyFixes)
                 {
@@ -125,7 +115,10 @@ namespace ZoneUA.EditorValidation
             }
             finally
             {
-                PrefabUtility.UnloadPrefabContents(root);
+                if (root != null)
+                {
+                    PrefabUtility.UnloadPrefabContents(root);
+                }
             }
         }
 
@@ -136,32 +129,25 @@ namespace ZoneUA.EditorValidation
             CompositionMigrationReport report)
         {
             bool changed = false;
-            Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
-            foreach (Transform target in transforms)
+            foreach (Transform target in root.GetComponentsInChildren<Transform>(true))
             {
                 foreach (ProductionCompositionRule rule in ProductionCompositionCatalog.Rules)
                 {
                     Type anchorType = RuntimeTypeResolver.Resolve(rule.AnchorTypeName);
-                    if (anchorType == null || target.GetComponent(anchorType) == null)
-                    {
-                        continue;
-                    }
+                    if (anchorType == null || target.GetComponent(anchorType) == null) continue;
 
                     foreach (string requiredTypeName in rule.RequiredTypeNames)
                     {
                         Type requiredType = RuntimeTypeResolver.Resolve(requiredTypeName);
+                        string hierarchyPath = GetHierarchyPath(target);
+
                         if (requiredType == null)
                         {
                             report.Add(
                                 CompositionMigrationStatus.Error,
                                 assetPath,
-                                GetHierarchyPath(target),
-                                $"Required type '{requiredTypeName}' could not be resolved for rule '{rule.Name}'.");
-                            continue;
-                        }
-
-                        if (target.GetComponent(requiredType) != null)
-                        {
+                                hierarchyPath,
+                                $"Required type '{requiredTypeName}' could not be resolved for '{rule.Name}'.");
                             continue;
                         }
 
@@ -170,18 +156,21 @@ namespace ZoneUA.EditorValidation
                             report.Add(
                                 CompositionMigrationStatus.Error,
                                 assetPath,
-                                GetHierarchyPath(target),
+                                hierarchyPath,
                                 $"Required type '{requiredType.FullName}' is not a Component.");
                             continue;
                         }
 
-                        if (!applyFixes)
+                        if (target.GetComponent(requiredType) != null) continue;
+
+                        if (!applyFixes || !rule.CanAutoAdd)
                         {
+                            string suffix = rule.CanAutoAdd ? string.Empty : " Manual reference wiring is required.";
                             report.Add(
                                 CompositionMigrationStatus.Missing,
                                 assetPath,
-                                GetHierarchyPath(target),
-                                $"Missing {requiredType.Name} required by '{rule.Name}'.");
+                                hierarchyPath,
+                                $"Missing {requiredType.Name} required by '{rule.Name}'.{suffix}");
                             continue;
                         }
 
@@ -190,7 +179,7 @@ namespace ZoneUA.EditorValidation
                         report.Add(
                             CompositionMigrationStatus.Added,
                             assetPath,
-                            GetHierarchyPath(target),
+                            hierarchyPath,
                             $"Added {requiredType.Name} for '{rule.Name}'.");
                     }
                 }
@@ -199,38 +188,33 @@ namespace ZoneUA.EditorValidation
             return changed;
         }
 
-        private static IEnumerable<string> FindProductionAssetPaths()
-        {
-            return AssetDatabase.FindAssets("t:Prefab", new[] { "Assets" })
+        private static IEnumerable<string> FindProductionAssetPaths() =>
+            AssetDatabase.FindAssets("t:Prefab", new[] { "Assets" })
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where(IsFirstPartyAsset);
-        }
 
-        private static bool IsFirstPartyAsset(string path)
-        {
-            return path.StartsWith("Assets/", StringComparison.Ordinal) &&
-                   !path.StartsWith("Assets/ThirdParty/", StringComparison.Ordinal) &&
-                   !path.Contains("/Samples~/") &&
-                   !path.Contains("/Tests/");
-        }
+        private static bool IsFirstPartyAsset(string path) =>
+            path.StartsWith("Assets/", StringComparison.Ordinal) &&
+            !path.StartsWith("Assets/ThirdParty/", StringComparison.Ordinal) &&
+            !path.Contains("/Samples~/") &&
+            !path.Contains("/Tests/");
 
         private static string GetHierarchyPath(Transform target)
         {
             var names = new Stack<string>();
-            Transform current = target;
-            while (current != null)
+            for (Transform current = target; current != null; current = current.parent)
             {
                 names.Push(current.name);
-                current = current.parent;
             }
 
             return string.Join("/", names);
         }
     }
 
-    internal static class RuntimeTypeResolver
+    public static class RuntimeTypeResolver
     {
-        private static readonly Dictionary<string, Type> Cache = new Dictionary<string, Type>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, Type> Cache =
+            new Dictionary<string, Type>(StringComparer.Ordinal);
 
         public static Type Resolve(string typeName)
         {
@@ -238,13 +222,19 @@ namespace ZoneUA.EditorValidation
             if (Cache.TryGetValue(typeName, out Type cached)) return cached;
 
             Type resolved = Type.GetType(typeName, false);
-            if (resolved == null)
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+                if (resolved != null) break;
+                resolved = assembly.GetType(typeName, false);
+                if (resolved != null) break;
+
+                try
                 {
-                    resolved = assembly.GetType(typeName, false) ??
-                               assembly.GetTypes().FirstOrDefault(type => type.Name == typeName);
-                    if (resolved != null) break;
+                    resolved = assembly.GetTypes().FirstOrDefault(type => type.Name == typeName);
+                }
+                catch (ReflectionTypeLoadException exception)
+                {
+                    resolved = exception.Types.FirstOrDefault(type => type != null && type.Name == typeName);
                 }
             }
 
