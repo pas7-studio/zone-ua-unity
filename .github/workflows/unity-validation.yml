@@ -1,0 +1,71 @@
+name: Unity Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: unity-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-integrity:
+    name: Repository integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate Unity repository
+        run: python scripts/validate_unity_repo.py
+
+  unity-editmode-tests:
+    name: Unity EditMode tests
+    if: ${{ vars.RUN_UNITY_TESTS == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Restore Unity Library cache
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ runner.os }}-${{ vars.UNITY_VERSION }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-${{ runner.os }}-${{ vars.UNITY_VERSION }}-
+
+      - name: Run EditMode tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: ${{ vars.UNITY_VERSION }}
+          testMode: EditMode
+          artifactsPath: TestResults/EditMode
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity EditMode tests
+
+      - name: Upload EditMode results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-editmode-results
+          path: TestResults/EditMode
+          if-no-files-found: warn
