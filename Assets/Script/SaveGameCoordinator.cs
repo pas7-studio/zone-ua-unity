@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using ZoneUA.Persistence;
@@ -7,9 +9,16 @@ using ZoneUA.Persistence;
 [DisallowMultipleComponent]
 public sealed class SaveGameCoordinator : MonoBehaviour
 {
+    [Header("Player")]
     [SerializeField] private Transform playerRoot;
     [SerializeField] private Health playerHealth;
     [SerializeField] private WeaponSwitcher weaponSwitcher;
+
+    [Header("World Persistence")]
+    [SerializeField] private PersistentPrefabCatalog persistentPrefabCatalog;
+    [SerializeField] private Transform runtimePersistentRoot;
+
+    [Header("Scene and Slots")]
     [SerializeField] private SceneBootstrapper sceneBootstrapper;
     [SerializeField] private string defaultSlot = "autosave";
     [SerializeField] private int currentWorldSeed;
@@ -131,6 +140,10 @@ public sealed class SaveGameCoordinator : MonoBehaviour
             data.player.maximumHealth = playerHealth.MaximumHealth;
         }
         if (weaponSwitcher != null) data.player.activeWeaponIndex = weaponSwitcher.ActiveWeaponIndex;
+
+        PersistentIdentity[] identities = FindObjectsByType<PersistentIdentity>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        data.worldObjects = PersistentWorldState.Capture(identities);
+        data.destroyedObjectIds = PersistentTombstoneRegistry.Current.OrderBy(id => id, StringComparer.Ordinal).ToList();
         return data;
     }
 
@@ -139,6 +152,17 @@ public sealed class SaveGameCoordinator : MonoBehaviour
         if (pendingRestore == null) return;
         ResolveReferences();
         currentWorldSeed = pendingRestore.worldSeed;
+        PersistentTombstoneRegistry.Replace(pendingRestore.destroyedObjectIds);
+        EnsureRuntimeObjects(pendingRestore.worldObjects);
+
+        PersistentIdentity[] identities = FindObjectsByType<PersistentIdentity>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        PersistentRestoreReport report = PersistentWorldState.Restore(
+            identities,
+            pendingRestore.worldObjects,
+            pendingRestore.destroyedObjectIds);
+        if (report.MissingObjectIds.Count > 0)
+            Debug.LogWarning($"Persistent restore could not resolve {report.MissingObjectIds.Count} object ID(s).", this);
+
         PlayerSaveData player = pendingRestore.player ?? new PlayerSaveData();
         if (playerRoot != null)
             playerRoot.SetPositionAndRotation(player.position, Quaternion.Euler(0f, 0f, player.rotationZ));
@@ -154,6 +178,32 @@ public sealed class SaveGameCoordinator : MonoBehaviour
         pendingRestore = null;
         pendingSlotId = string.Empty;
         Loaded?.Invoke(loadedSlot);
+    }
+
+    private void EnsureRuntimeObjects(IReadOnlyList<PersistentObjectSaveData> objects)
+    {
+        if (objects == null || persistentPrefabCatalog == null) return;
+        var existing = new HashSet<string>(
+            FindObjectsByType<PersistentIdentity>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Where(identity => identity != null && identity.HasValidId)
+                .Select(identity => identity.ObjectId),
+            StringComparer.Ordinal);
+
+        foreach (PersistentObjectSaveData objectData in objects)
+        {
+            if (objectData == null || !objectData.runtimeSpawned || existing.Contains(objectData.objectId)) continue;
+            if (PersistentTombstoneRegistry.Current.Contains(objectData.objectId)) continue;
+            if (!persistentPrefabCatalog.TryGetPrefab(objectData.prefabId, out GameObject prefab))
+            {
+                Debug.LogWarning($"No persistent prefab registered for '{objectData.prefabId}'.", this);
+                continue;
+            }
+
+            GameObject instance = Instantiate(prefab, runtimePersistentRoot);
+            PersistentIdentity identity = instance.GetComponent<PersistentIdentity>() ?? instance.AddComponent<PersistentIdentity>();
+            identity.AssignRuntimeId(objectData.objectId, objectData.prefabId);
+            existing.Add(objectData.objectId);
+        }
     }
 
     private void OnSceneActivated(string sceneName) => ApplyPendingRestore();
