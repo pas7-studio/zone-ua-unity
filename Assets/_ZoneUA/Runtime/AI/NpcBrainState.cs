@@ -72,6 +72,11 @@ namespace ZoneUA.AI
         public void ClearTarget()
         {
             HasTarget = false;
+        }
+
+        public void ForgetTarget()
+        {
+            HasTarget = false;
             LastTargetSeenTime = float.NegativeInfinity;
         }
 
@@ -91,7 +96,7 @@ namespace ZoneUA.AI
         public void Reset()
         {
             Current = NpcState.Idle;
-            ClearTarget();
+            ForgetTarget();
         }
     }
 }
