@@ -27,6 +27,7 @@ namespace ZoneUA.Inventory
         public int Capacity => capacity;
         public int DistinctItemCount => amounts.Count;
         public int TotalItemCount => amounts.Values.Sum();
+        public int FreeCapacity => capacity <= 0 ? int.MaxValue : Math.Max(0, capacity - TotalItemCount);
         public IReadOnlyList<InventoryEntry> Entries => amounts.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => new InventoryEntry(pair.Key, pair.Value)).ToList();
 
         public int GetAmount(string itemId) => Normalize(itemId) is string id && amounts.TryGetValue(id, out int value) ? value : 0;
@@ -65,6 +66,17 @@ namespace ZoneUA.Inventory
             return true;
         }
 
+        public bool TryTransferTo(InventoryState destination, string itemId, int amount)
+        {
+            if (destination == null || ReferenceEquals(destination, this) || amount <= 0) return false;
+            string id = Normalize(itemId);
+            if (string.IsNullOrEmpty(id) || !Has(id, amount) || !destination.CanAdd(id, amount)) return false;
+            if (!Remove(id, amount)) return false;
+            if (destination.Add(id, amount)) return true;
+            Add(id, amount);
+            return false;
+        }
+
         public void Replace(IEnumerable<InventoryEntry> entries)
         {
             amounts.Clear();
@@ -75,7 +87,7 @@ namespace ZoneUA.Inventory
             }
         }
 
-        private static List<InventoryEntry> NormalizeEntries(IEnumerable<InventoryEntry> entries)
+        public static List<InventoryEntry> NormalizeEntries(IEnumerable<InventoryEntry> entries)
         {
             return (entries ?? Array.Empty<InventoryEntry>())
                 .Where(entry => entry != null && entry.amount > 0 && !string.IsNullOrWhiteSpace(entry.itemId))
