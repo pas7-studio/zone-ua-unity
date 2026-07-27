@@ -57,10 +57,15 @@ public sealed class ProductionFacility : MonoBehaviour, IPersistentSaveParticipa
             queue.entries.RemoveAt(0);
             return;
         }
-        if (!queue.TryAdvance(deltaTime, recipe.DurationSeconds, out _)) return;
+
         InventoryComponent destination = outputInventory != null ? outputInventory : inputInventory;
         if (destination == null) return;
-        foreach (InventoryEntry output in recipe.BuildOutputs()) destination.Add(output.ItemId, output.Amount);
+        List<InventoryEntry> outputs = recipe.BuildOutputs();
+        int outputCount = outputs.Sum(entry => entry.Amount);
+        if (destination.Capacity > 0 && destination.TotalItemCount + outputCount > destination.Capacity) return;
+
+        if (!queue.TryAdvance(deltaTime, recipe.DurationSeconds, out _)) return;
+        foreach (InventoryEntry output in outputs) destination.Add(output.ItemId, output.Amount);
     }
 
     public string CaptureState()
