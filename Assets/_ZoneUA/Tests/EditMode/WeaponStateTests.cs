@@ -22,6 +22,18 @@ namespace ZoneUA.Combat.Tests
         }
 
         [Test]
+        public void RepeatedStartTrigger_DoesNotRearmSingleFire()
+        {
+            var state = new WeaponFireState();
+            state.StartTrigger();
+            state.RegisterSuccessfulShot(WeaponFireMode.Single, 0f, 0.2f, 0f);
+
+            state.StartTrigger();
+
+            Assert.That(state.ShouldAttemptShot(WeaponFireMode.Single, 0.2f), Is.False);
+        }
+
+        [Test]
         public void AutomaticFire_RespectsShotInterval()
         {
             var state = new WeaponFireState();
