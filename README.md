@@ -4,8 +4,8 @@ A 2D Unity prototype with procedural world generation, NPC combat, weapons, vege
 
 ## Editor
 
-- Unity **2022.2.8f1**
-- Universal Render Pipeline 14
+- Unity **6000.5.5f1**
+- Universal Render Pipeline 17
 - Open `Assets/Scenes/SampleScene.unity` as the current main scene.
 
 ## Repository rules
