@@ -1,0 +1,25 @@
+{
+  "name": "ZoneUA.PlayModeTests",
+  "rootNamespace": "ZoneUA.Tests.PlayMode",
+  "references": [
+    "ZoneUA.Combat",
+    "ZoneUA.Definitions",
+    "ZoneUA.Factions",
+    "ZoneUA.Infrastructure",
+    "ZoneUA.AI",
+    "ZoneUA.World",
+    "ZoneUA.Input",
+    "ZoneUA.Persistence",
+    "ZoneUA.Inventory"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": ["TestAssemblies"]
+}

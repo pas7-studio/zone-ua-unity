@@ -1,0 +1,18 @@
+﻿<Solution>
+  <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="ZoneUA.EditorValidation.csproj" />
+  <Project Path="ZoneUA.World.csproj" />
+  <Project Path="ZoneUA.Inventory.csproj" />
+  <Project Path="ZoneUA.Combat.EditModeTests.csproj" />
+  <Project Path="ZoneUA.PlayModeTests.csproj" />
+  <Project Path="ZoneUA.Combat.csproj" />
+  <Project Path="ZoneUA.EditorValidation.Tests.csproj" />
+  <Project Path="ZoneUA.SceneManagement.csproj" />
+  <Project Path="ZoneUA.Infrastructure.csproj" />
+  <Project Path="ZoneUA.Performance.csproj" />
+  <Project Path="ZoneUA.Persistence.csproj" />
+  <Project Path="ZoneUA.Definitions.csproj" />
+  <Project Path="ZoneUA.Factions.csproj" />
+  <Project Path="ZoneUA.AI.csproj" />
+  <Project Path="ZoneUA.Input.csproj" />
+</Solution>

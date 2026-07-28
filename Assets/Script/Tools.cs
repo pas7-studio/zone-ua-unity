@@ -14,12 +14,12 @@ namespace Assets.Script
 
             if (duration <= 0f)
             {
-                body.velocity = Vector2.zero;
+                body.linearVelocity = Vector2.zero;
                 body.angularVelocity = 0f;
                 yield break;
             }
 
-            Vector2 initialVelocity = body.velocity;
+            Vector2 initialVelocity = body.linearVelocity;
             float initialAngularVelocity = body.angularVelocity;
             float elapsed = 0f;
 
@@ -29,14 +29,14 @@ namespace Assets.Script
                 float progress = Mathf.Clamp01(elapsed / duration);
                 float attenuation = 1f - progress;
 
-                body.velocity = initialVelocity * attenuation;
+                body.linearVelocity = initialVelocity * attenuation;
                 body.angularVelocity = initialAngularVelocity * attenuation;
                 yield return null;
             }
 
             if (body != null)
             {
-                body.velocity = Vector2.zero;
+                body.linearVelocity = Vector2.zero;
                 body.angularVelocity = 0f;
             }
         }
